@@ -10,22 +10,22 @@ export default async function handler(req, res) {
     const key_secret = process.env.RAZORPAY_KEY_SECRET;
 
     if (!key_id || !key_secret) {
-      return res.status(500).json({ error: "Razorpay keys missing in env" });
+      return res.status(500).json({
+        error: "Razorpay keys missing",
+        key_id_present: !!key_id,
+        key_secret_present: !!key_secret,
+      });
     }
 
-    const razorpay = new Razorpay({ key_id, key_secret });
-
-    // ₹199 = 19900 paise
-    const amount = 19900;
-    const currency = "INR";
+    const razorpay = new Razorpay({
+      key_id,
+      key_secret,
+    });
 
     const order = await razorpay.orders.create({
-      amount,
-      currency,
+      amount: 19900,
+      currency: "INR",
       receipt: `resume_${Date.now()}`,
-      notes: {
-        product: "ResumeBoost AI - Optimized Resume PDF",
-      },
     });
 
     return res.status(200).json({
@@ -34,7 +34,11 @@ export default async function handler(req, res) {
       currency: order.currency,
     });
   } catch (e) {
-    console.error("CREATE ORDER ERROR:", e);
-    return res.status(500).json({ error: e.message || "Create order failed" });
+    console.error("RAZORPAY ORDER ERROR FULL:", e);
+
+    return res.status(500).json({
+      error: "Razorpay order create failed",
+      details: e?.error || e?.message || e,
+    });
   }
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function Home() {
   const [jobDesc, setJobDesc] = useState("");
@@ -10,6 +10,19 @@ export default function Home() {
 
   // 🔒 Lock: free users will NOT see optimized full text
   const [isLocked, setIsLocked] = useState(true);
+  const [paying, setPaying] = useState(false);
+
+  // Load Razorpay checkout script
+  useEffect(() => {
+    const id = "razorpay-checkout-js";
+    if (document.getElementById(id)) return;
+
+    const script = document.createElement("script");
+    script.id = id;
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    document.body.appendChild(script);
+  }, []);
 
   const handleCheck = async () => {
     setError("");
@@ -42,7 +55,7 @@ export default function Home() {
     }
   };
 
-  // ✅ PDF download (works after unlock OR for testing)
+  // ✅ PDF download (called after payment success / unlock)
   const downloadPdf = async () => {
     try {
       if (!result?.optimizedResumeText) {
@@ -74,6 +87,78 @@ export default function Home() {
       window.URL.revokeObjectURL(url);
     } catch (e) {
       alert(e.message || "Download error");
+    }
+  };
+
+  const startPayment = async () => {
+    try {
+      setPaying(true);
+
+      if (!result?.optimizedResumeText) {
+        setPaying(false);
+        return alert("Pehle ATS score generate karo.");
+      }
+
+      if (!window.Razorpay) {
+        setPaying(false);
+        return alert("Razorpay script load nahi hua. Page refresh karo.");
+      }
+
+      // 1) Create order (server)
+      const orderRes = await fetch("/api/create-order", { method: "POST" });
+      const orderData = await orderRes.json();
+      if (!orderRes.ok) throw new Error(orderData?.error || "Order create failed");
+
+      const key = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
+
+      const options = {
+        key: key || orderData.key || undefined, // key should come from env (NEXT_PUBLIC_RAZORPAY_KEY_ID)
+        amount: orderData.amount,
+        currency: orderData.currency,
+        name: "ResumeBoost AI",
+        description: "Optimized Resume PDF Download",
+        order_id: orderData.orderId,
+        handler: async function (response) {
+          try {
+            // 2) Verify payment (server)
+            const verifyRes = await fetch("/api/verify-payment", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(response),
+            });
+
+            const verifyData = await verifyRes.json();
+            if (!verifyRes.ok) throw new Error(verifyData?.error || "Payment verify failed");
+
+            // 3) Unlock + auto download
+            setIsLocked(false);
+            await downloadPdf();
+          } catch (e) {
+            alert(e.message || "Payment verification failed");
+          } finally {
+            setPaying(false);
+          }
+        },
+        theme: { color: "#f59e0b" },
+      };
+
+      if (!options.key) {
+        setPaying(false);
+        return alert(
+          "NEXT_PUBLIC_RAZORPAY_KEY_ID missing. Render env me add karo."
+        );
+      }
+
+      const rzp = new window.Razorpay(options);
+      rzp.on("payment.failed", function () {
+        setPaying(false);
+        alert("Payment failed. Try again.");
+      });
+
+      rzp.open();
+    } catch (e) {
+      setPaying(false);
+      alert(e.message || "Payment start failed");
     }
   };
 
@@ -140,35 +225,28 @@ export default function Home() {
                   🔒 Optimized resume is locked
                 </p>
                 <p style={{ fontSize: 13, color: "#4b5563", margin: 0 }}>
-                  Get the full ATS‑optimized resume + PDF download.
+                  Pay once to unlock full resume + PDF download.
                 </p>
 
-                {/* ✅ This will later open Razorpay (next step) */}
                 <button
-                  style={styles.payButton}
-                  onClick={() => alert("Payment integration next step (Razorpay).")}
+                  style={{
+                    ...styles.payButton,
+                    opacity: paying ? 0.85 : 1,
+                    cursor: paying ? "not-allowed" : "pointer",
+                  }}
+                  onClick={startPayment}
+                  disabled={paying}
                 >
-                  Download Optimized Resume – ₹199
+                  {paying ? "Opening payment..." : "Download Optimized Resume – ₹199"}
                 </button>
 
                 <p style={{ fontSize: 12, color: "#6b7280", marginTop: 10 }}>
-                  (Abhi payment demo alert)
+                  Test mode me UPI/Card fake payment test kar sakte ho.
                 </p>
-
-                {/* ✅ Testing buttons (remove in production) */}
-                <div style={{ marginTop: 12, display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-                  <button style={styles.secondaryBtn} onClick={() => setIsLocked(false)}>
-                    (Test) Unlock preview
-                  </button>
-                  <button style={styles.secondaryBtn} onClick={downloadPdf}>
-                    (Test) Download PDF
-                  </button>
-                </div>
               </div>
             ) : (
               <div>
                 <pre style={styles.pre}>{result.optimizedResumeText}</pre>
-
                 <div style={{ marginTop: 10 }}>
                   <button style={styles.secondaryBtn} onClick={downloadPdf}>
                     Download PDF
@@ -262,7 +340,6 @@ const styles = {
     fontSize: 12,
     lineHeight: 1.5,
   },
-
   lockBox: {
     marginTop: 10,
     padding: 16,
@@ -279,7 +356,6 @@ const styles = {
     border: "none",
     borderRadius: 8,
     fontWeight: 900,
-    cursor: "pointer",
   },
   secondaryBtn: {
     padding: "8px 12px",

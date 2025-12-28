@@ -17,13 +17,10 @@ export default async function handler(req, res) {
       });
     }
 
-    const razorpay = new Razorpay({
-      key_id,
-      key_secret,
-    });
+    const razorpay = new Razorpay({ key_id, key_secret });
 
     const order = await razorpay.orders.create({
-      amount: 19900,
+      amount: 19900, // ₹199 in paise
       currency: "INR",
       receipt: `resume_${Date.now()}`,
     });
@@ -35,7 +32,6 @@ export default async function handler(req, res) {
     });
   } catch (e) {
     console.error("RAZORPAY ORDER ERROR FULL:", e);
-
     return res.status(500).json({
       error: "Razorpay order create failed",
       details: e?.error || e?.message || e,

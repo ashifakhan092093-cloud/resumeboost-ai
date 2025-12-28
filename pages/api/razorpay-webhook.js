@@ -1,116 +1,74 @@
-// pages/api/razorpay-webhook.js
 import crypto from "crypto";
-import { supabaseAdmin } from "../../lib/supabaseAdmin";
+import { MongoClient } from "mongodb";
 
 export const config = {
-  api: {
-    bodyParser: false, // IMPORTANT: webhook needs raw body
-  },
+  api: { bodyParser: false }, // ✅ RAW body needed
 };
+
+let cachedClient = null;
+
+async function connectMongo() {
+  if (cachedClient) return cachedClient;
+  const client = new MongoClient(process.env.MONGODB_URI);
+  await client.connect();
+  cachedClient = client;
+  return client;
+}
 
 function getRawBody(req) {
   return new Promise((resolve, reject) => {
-    let data = "";
-    req.on("data", (chunk) => (data += chunk));
-    req.on("end", () => resolve(data));
-    req.on("error", (err) => reject(err));
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
   });
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).send("Method not allowed");
+  if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
   try {
-    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!webhookSecret) return res.status(500).json({ error: "RAZORPAY_WEBHOOK_SECRET missing" });
-    if (!supabaseUrl) return res.status(500).json({ error: "SUPABASE_URL missing" });
-    if (!supabaseKey) return res.status(500).json({ error: "SUPABASE_SERVICE_ROLE_KEY missing" });
-
-    const signature = req.headers["x-razorpay-signature"];
-    if (!signature) return res.status(400).json({ error: "Missing x-razorpay-signature" });
+    const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    if (!secret) return res.status(500).json({ error: "RAZORPAY_WEBHOOK_SECRET missing" });
 
     const rawBody = await getRawBody(req);
+    const receivedSignature = req.headers["x-razorpay-signature"];
 
-    // Verify signature
-    const expected = crypto
-      .createHmac("sha256", webhookSecret)
+    const expectedSignature = crypto
+      .createHmac("sha256", secret)
       .update(rawBody)
       .digest("hex");
 
-    if (expected !== signature) {
-      console.log("❌ Invalid signature", { expected, signature });
+    if (expectedSignature !== receivedSignature) {
       return res.status(400).json({ error: "Invalid signature" });
     }
 
-    const event = JSON.parse(rawBody);
+    const event = JSON.parse(rawBody.toString("utf8"));
 
-    // Handle payment.captured
-    if (event?.event === "payment.captured") {
-      const p = event?.payload?.payment?.entity;
+    if (event.event === "payment.captured") {
+      const payment = event.payload.payment.entity;
 
-      console.log("✅ payment.captured:", {
-        id: p?.id,
-        order_id: p?.order_id,
-        amount: p?.amount,
-        method: p?.method,
-        email: p?.email,
-        contact: p?.contact,
+      const client = await connectMongo();
+      const db = client.db("resumeboost");
+      const payments = db.collection("payments");
+
+      await payments.insertOne({
+        payment_id: payment.id,
+        order_id: payment.order_id,
+        amount: payment.amount,
+        currency: payment.currency,
+        status: payment.status,
+        email: payment.email,
+        contact: payment.contact,
+        created_at: new Date(),
       });
 
-      const { error } = await supabaseAdmin.from("payments").upsert(
-        {
-          payment_id: p?.id,
-          order_id: p?.order_id,
-          amount: p?.amount,
-          currency: p?.currency || "INR",
-          status: "captured",
-          method: p?.method,
-          email: p?.email,
-          contact: p?.contact,
-          raw: event,
-        },
-        { onConflict: "payment_id" }
-      );
-
-      if (error) console.log("❌ supabase insert error:", error);
-      else console.log("✅ saved to supabase:", p?.id);
-    }
-
-    // Handle payment.failed
-    if (event?.event === "payment.failed") {
-      const p = event?.payload?.payment?.entity;
-
-      console.log("❌ payment.failed:", {
-        id: p?.id,
-        order_id: p?.order_id,
-        error: p?.error_description,
-      });
-
-      const { error } = await supabaseAdmin.from("payments").upsert(
-        {
-          payment_id: p?.id,
-          order_id: p?.order_id,
-          amount: p?.amount,
-          currency: p?.currency || "INR",
-          status: "failed",
-          method: p?.method,
-          email: p?.email,
-          contact: p?.contact,
-          raw: event,
-        },
-        { onConflict: "payment_id" }
-      );
-
-      if (error) console.log("❌ supabase failed insert error:", error);
-      else console.log("✅ saved failed payment to supabase:", p?.id);
+      console.log("✅ Payment saved to MongoDB:", payment.id);
     }
 
     return res.status(200).json({ ok: true });
-  } catch (e) {
-    console.error("WEBHOOK ERROR:", e);
-    return res.status(500).json({ error: e?.message || "Webhook error" });
+  } catch (err) {
+    console.error("❌ Webhook error:", err);
+    return res.status(500).json({ error: err?.message || "Webhook failed" });
   }
 }

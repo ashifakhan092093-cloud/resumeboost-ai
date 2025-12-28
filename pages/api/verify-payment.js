@@ -24,15 +24,13 @@ export default async function handler(req, res) {
       .update(body)
       .digest("hex");
 
-    const isValid = expectedSignature === razorpay_signature;
-
-    if (!isValid) {
+    if (expectedSignature !== razorpay_signature) {
       return res.status(400).json({ error: "Invalid signature" });
     }
 
     return res.status(200).json({ ok: true });
   } catch (e) {
     console.error("VERIFY PAYMENT ERROR:", e);
-    return res.status(500).json({ error: e.message || "Verify failed" });
+    return res.status(500).json({ error: e?.message || "Verify failed" });
   }
 }

@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 export default function Home() {
   const [jobDesc, setJobDesc] = useState("");
   const [resume, setResume] = useState(null);
-
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
@@ -112,7 +111,7 @@ export default function Home() {
       const key = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
 
       const options = {
-        key: key || orderData.key || undefined, // key should come from env (NEXT_PUBLIC_RAZORPAY_KEY_ID)
+        key: key || orderData.key || undefined,
         amount: orderData.amount,
         currency: orderData.currency,
         name: "ResumeBoost AI",
@@ -144,9 +143,7 @@ export default function Home() {
 
       if (!options.key) {
         setPaying(false);
-        return alert(
-          "NEXT_PUBLIC_RAZORPAY_KEY_ID missing. Render env me add karo."
-        );
+        return alert("NEXT_PUBLIC_RAZORPAY_KEY_ID missing. Render env me add karo.");
       }
 
       const rzp = new window.Razorpay(options);
@@ -167,6 +164,13 @@ export default function Home() {
       <div style={styles.card}>
         <h1 style={styles.title}>ResumeBoost AI</h1>
         <p style={styles.subtitle}>Optimize your resume for ATS in seconds.</p>
+
+        {/* ✅ SEO internal link to your new page */}
+        <p style={{ textAlign: "center", marginTop: 10 }}>
+          <a href="/resume-builder-online" style={styles.topLink}>
+            Resume Builder Online
+          </a>
+        </p>
 
         <div style={styles.form}>
           <label style={styles.label}>Upload Resume (PDF / DOCX)</label>
@@ -205,9 +209,9 @@ export default function Home() {
 
             <h3 style={styles.resultHeading}>Missing keywords</h3>
             <ul style={styles.ul}>
-              {result.missingKeywords?.map((k) => (
-                <li key={k}>{k}</li>
-              ))}
+              {result.missingKeywords?.mapmap
+                ? result.missingKeywords.map((k) => <li key={k}>{k}</li>)
+                : result.missingKeywords?.map((k) => <li key={k}>{k}</li>)}
             </ul>
 
             <h3 style={styles.resultHeading}>Quick tips</h3>
@@ -284,11 +288,16 @@ const styles = {
     fontWeight: 800,
     color: "#16a34a",
     textAlign: "center",
+    margin: 0,
   },
   subtitle: {
     textAlign: "center",
     marginTop: 8,
     color: "#4b5563",
+  },
+  topLink: {
+    fontWeight: 800,
+    textDecoration: "underline",
   },
   form: {
     marginTop: 24,

@@ -11,3 +11,10 @@ export default function ResumeBuilderOnline() {
     </div>
   );
 }
+<p>
+ResumeBoost‑AI helps you create a modern, ATS‑friendly resume online.
+Our AI resume builder analyzes job requirements and generates
+professional resumes that improve your chances of getting shortlisted.
+You can build, optimize and download your resume instantly.
+</p>
+

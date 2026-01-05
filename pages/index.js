@@ -165,7 +165,7 @@ export default function Home() {
         <h1 style={styles.title}>ResumeBoost AI</h1>
         <p style={styles.subtitle}>Optimize your resume for ATS in seconds.</p>
 
-        {/* ✅ SEO internal link to your new page */}
+        {/* ✅ Internal SEO link */}
         <p style={{ textAlign: "center", marginTop: 10 }}>
           <a href="/resume-builder-online" style={styles.topLink}>
             Resume Builder Online
@@ -209,14 +209,14 @@ export default function Home() {
 
             <h3 style={styles.resultHeading}>Missing keywords</h3>
             <ul style={styles.ul}>
-              {result.missingKeywords?.mapmap
-                ? result.missingKeywords.map((k) => <li key={k}>{k}</li>)
-                : result.missingKeywords?.map((k) => <li key={k}>{k}</li>)}
+              {(Array.isArray(result.missingKeywords) ? result.missingKeywords : []).map((k) => (
+                <li key={k}>{k}</li>
+              ))}
             </ul>
 
             <h3 style={styles.resultHeading}>Quick tips</h3>
             <ul style={styles.ul}>
-              {result.tips?.map((t, i) => (
+              {(Array.isArray(result.tips) ? result.tips : []).map((t, i) => (
                 <li key={i}>{t}</li>
               ))}
             </ul>

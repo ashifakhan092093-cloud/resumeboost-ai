@@ -171,6 +171,12 @@ export default function Home() {
             Resume Builder Online
           </a>
         </p>
+        <p style={{ textAlign: "center", marginTop: 6 }}>
+  <a href="/ats-resume-checker" style={styles.topLink}>
+    ATS Resume Checker
+  </a>
+</p>
+
 
         <div style={styles.form}>
           <label style={styles.label}>Upload Resume (PDF / DOCX)</label>

@@ -1,30 +1,26 @@
 import PDFDocument from "pdfkit";
 
+export const config = {
+  api: { bodyParser: { sizeLimit: "2mb" } },
+};
+
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-
   try {
-    const { title, content } = req.body || {};
-    const text = (content || "").toString().trim();
+    if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-    if (!text) return res.status(400).json({ error: "No content provided" });
+    const { content, fileName } = req.body || {};
+    if (!content) return res.status(400).json({ error: "content required" });
 
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", 'attachment; filename="optimized-resume.pdf"');
+    res.setHeader("Content-Disposition", `attachment; filename="${fileName || "resume.pdf"}"`);
 
-    const doc = new PDFDocument({ margin: 40, size: "A4" });
+    const doc = new PDFDocument({ size: "A4", margin: 40 });
     doc.pipe(res);
 
-    doc.fontSize(18).text(title || "Optimized Resume", { align: "center" });
-    doc.moveDown();
-
-    doc.fontSize(11).fillColor("#111111").text(text, {
-      align: "left",
-      lineGap: 4,
-    });
+    doc.fontSize(11).text(String(content), { align: "left" });
 
     doc.end();
   } catch (e) {
-    return res.status(500).json({ error: e.message || "PDF generation failed" });
+    return res.status(500).json({ error: e?.message || "PDF error" });
   }
 }

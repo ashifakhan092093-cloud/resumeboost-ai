@@ -7,36 +7,26 @@ export default async function handler(req, res) {
       jobTitle,
       expYears,
       skills,
-      qualification,
+      highestQualification,
       fieldOfStudy,
-      institute,
-      gradYear,
-      experienceNotes,
+      graduationYear,
+      companyName,
+      experienceDetails,
     } = req.body || {};
 
-    if (!fullName) return res.status(400).json({ error: "Full name required" });
+    if (!fullName) return res.status(400).json({ error: "fullName required" });
 
-    const title = (jobTitle && jobTitle.trim()) || "Professional Executive";
-    const yearsNum = parseInt((expYears || "").toString().trim(), 10);
-    const hasExp = !Number.isNaN(yearsNum) && yearsNum > 0;
+    const title = (jobTitle || "").trim() || "Professional Executive";
 
-    const userSkills = splitSkills(skills || "");
-    const roleSkills = suggestSkills(title);
-    const finalSkills = unique([...userSkills, ...roleSkills]).slice(0, 14).join(", ");
+    const education = buildEducation({ highestQualification, fieldOfStudy, graduationYear });
 
-    const summary = buildSummary({ title, hasExp, yearsNum });
+    const summary =
+      `Results-driven ${title} with strong communication and organizational skills. ` +
+      `Known for delivering quality work on time and adapting in fast-paced environments.`;
 
-    // ✅ If user provided experience notes, prefer that
-    const experience = (experienceNotes || "").trim()
-      ? sanitizeBullets(experienceNotes.trim())
-      : buildExperience({ title, hasExp });
+    const finalSkills = buildSkills(title, skills);
 
-    const education = buildEducation({
-      qualification,
-      fieldOfStudy,
-      institute,
-      gradYear,
-    });
+    const experience = buildExperience({ title, expYears, companyName, experienceDetails });
 
     return res.status(200).json({
       summary,
@@ -49,106 +39,54 @@ export default async function handler(req, res) {
   }
 }
 
-function buildSummary({ title, hasExp, yearsNum }) {
-  if (hasExp) {
-    return (
-      `Results-driven ${title} with ${yearsNum}+ years of experience, known for delivering high-quality work, ` +
-      `supporting business goals, and collaborating effectively with teams. Strong communication, problem-solving, ` +
-      `and ownership mindset with a focus on measurable outcomes.`
-    );
-  }
-  return (
-    `Highly motivated ${title} with strong communication and organizational skills. Quick learner with a professional ` +
-    `mindset, able to handle responsibilities efficiently and adapt in fast-paced environments. Actively seeking opportunities ` +
-    `to contribute to organizational growth.`
-  );
-}
-
-function buildExperience({ title, hasExp }) {
-  if (hasExp) {
-    return (
-      `• Managed key responsibilities as a ${title}, ensuring timely delivery and consistent quality.\n` +
-      `• Coordinated with team/stakeholders to plan priorities, track progress, and meet deadlines.\n` +
-      `• Maintained documentation and improved workflow through process discipline.\n` +
-      `• Demonstrated professionalism, punctuality, and a results-oriented mindset.`
-    );
-  }
-  return (
-    `• Assisted in day-to-day operations and handled assigned tasks with accuracy and professionalism.\n` +
-    `• Coordinated with team members to support targets, timelines, and quality standards.\n` +
-    `• Maintained records/documentation and ensured timely completion of responsibilities.\n` +
-    `• Demonstrated professionalism, punctuality, and a results-oriented mindset.`
-  );
-}
-
-function suggestSkills(title) {
-  const t = title.toLowerCase();
-
-  const base = [
-    "Communication",
-    "Team Collaboration",
-    "Problem Solving",
-    "Time Management",
-    "MS Office / Digital Tools",
-  ];
-
-  if (t.includes("sales") || t.includes("business")) {
-    return unique([...base, "Lead Generation", "Negotiation", "Client Handling", "CRM Basics", "Presentation Skills"]);
-  }
-  if (t.includes("developer") || t.includes("engineer") || t.includes("software")) {
-    return unique([...base, "JavaScript", "Debugging", "Git", "API Basics", "Logical Thinking"]);
-  }
-  if (t.includes("account") || t.includes("finance")) {
-    return unique([...base, "MS Excel", "Billing & Invoicing", "Reconciliation", "Attention to Detail"]);
-  }
-  if (t.includes("marketing")) {
-    return unique([...base, "Content Writing", "Social Media", "Campaign Coordination", "Analytics Basics"]);
-  }
-
-  return unique([...base, "Customer Support", "Documentation", "Coordination"]);
-}
-
-function buildEducation({ qualification, fieldOfStudy, institute, gradYear }) {
-  const q = (qualification || "").trim();
+function buildEducation({ highestQualification, fieldOfStudy, graduationYear }) {
+  const q = (highestQualification || "").trim();
   const f = (fieldOfStudy || "").trim();
-  const i = (institute || "").trim();
-  const y = (gradYear || "").trim();
+  const y = (graduationYear || "").trim();
+  if (!q && !f && !y) return "Bachelor’s Degree / Equivalent Qualification";
+  const left = [q || "Bachelor’s Degree", f ? `– ${f}` : ""].join(" ").trim();
+  const right = y ? `Year: ${y}` : "";
+  return [left, right].filter(Boolean).join(" | ");
+}
 
-  if (q || f || i || y) {
-    const left = [q, f].filter(Boolean).join(" - ");
-    const right = [i, y].filter(Boolean).join(" | ");
-    if (left && right) return `${left}\n${right}`;
-    if (left) return left;
-    if (right) return right;
+function buildSkills(title, skillsRaw) {
+  const user = splitSkills(skillsRaw || "");
+  const base = ["Communication", "Teamwork", "Problem Solving", "Time Management"];
+
+  const t = (title || "").toLowerCase();
+  let role = [];
+  if (t.includes("mechanic")) role = ["Vehicle Maintenance", "Diagnostics", "Engine Repair", "Tool Handling"];
+  else if (t.includes("sales")) role = ["Client Handling", "Lead Generation", "Follow-ups", "Negotiation"];
+  else if (t.includes("developer")) role = ["JavaScript", "Git", "Debugging", "APIs"];
+
+  return unique([...user, ...role, ...base]).slice(0, 14).join(", ");
+}
+
+function buildExperience({ title, expYears, companyName, experienceDetails }) {
+  const comp = (companyName || "").trim();
+  const details = (experienceDetails || "").trim();
+
+  if (details) {
+    return details
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((l) => (l.startsWith("•") ? l : `• ${l}`))
+      .slice(0, 10)
+      .join("\n");
   }
 
-  return "Bachelor’s Degree / Equivalent Qualification";
+  const yearsNum = parseInt((expYears || "").toString().trim(), 10);
+  const hasExp = !Number.isNaN(yearsNum) && yearsNum > 0;
+
+  return hasExp
+    ? `• Worked as ${title}${comp ? ` at ${comp}` : ""}\n• Maintained quality, safety and timely completion\n• Coordinated with team and handled responsibilities professionally`
+    : `• Assisted as ${title}${comp ? ` at ${comp}` : ""}\n• Supported daily tasks and learned processes quickly\n• Maintained discipline and punctuality`;
 }
 
 function splitSkills(text) {
-  return (text || "")
-    .split(/,|\n/)
-    .map((x) => x.trim())
-    .filter(Boolean);
+  return (text || "").split(/,|\n/).map((x) => x.trim()).filter(Boolean);
 }
-
 function unique(arr) {
   return [...new Set(arr)];
-}
-
-// Make sure bullets look clean
-function sanitizeBullets(text) {
-  const lines = text
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
-
-  // If user didn’t add bullets, add bullets automatically
-  const hasBullet = lines.some((l) => l.startsWith("•") || l.startsWith("-"));
-  if (hasBullet) {
-    return lines
-      .map((l) => (l.startsWith("-") ? `• ${l.slice(1).trim()}` : l))
-      .join("\n");
-  }
-  return lines.map((l) => `• ${l}`).join("\n");
 }

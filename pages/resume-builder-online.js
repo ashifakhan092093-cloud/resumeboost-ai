@@ -3,15 +3,24 @@ import Head from "next/head";
 import Link from "next/link";
 
 export default function ResumeBuilderOnline() {
-  // ✅ Only 3 required
+  // ✅ Required (only 3)
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [mobile, setMobile] = useState("");
 
-  // Optional
+  // Optional (AI improves)
   const [jobTitle, setJobTitle] = useState("");
   const [expYears, setExpYears] = useState("");
-  const [skills, setSkills] = useState(""); // optional
+  const [skills, setSkills] = useState("");
+
+  // ✅ NEW: Qualification (optional)
+  const [qualification, setQualification] = useState("");
+  const [fieldOfStudy, setFieldOfStudy] = useState("");
+  const [institute, setInstitute] = useState("");
+  const [gradYear, setGradYear] = useState("");
+
+  // ✅ NEW: Experience (optional, if user wants to add)
+  const [experienceNotes, setExperienceNotes] = useState("");
 
   // AI output (server)
   const [ai, setAi] = useState(null);
@@ -20,19 +29,22 @@ export default function ResumeBuilderOnline() {
 
   const requiredOk = fullName.trim() && email.trim() && mobile.trim();
 
-  const baseProfile = useMemo(() => {
+  const profile = useMemo(() => {
     const title = jobTitle.trim() || "Professional Executive";
-    const years = (expYears || "").toString().trim();
-    const yrs = years ? `${years}+ years` : "";
-    return { title, yrs };
+    const yearsStr = (expYears || "").toString().trim();
+    const yearsNum = parseInt(yearsStr, 10);
+    const hasExp = !Number.isNaN(yearsNum) && yearsNum > 0;
+    return { title, yearsStr, yearsNum, hasExp };
   }, [jobTitle, expYears]);
 
-  // If user didn’t click "Generate", we still show a nice default preview
+  // Fallback content (even without AI click)
   const fallback = useMemo(() => {
-    const title = baseProfile.title;
+    const title = profile.title;
+
     const summary =
-      `Highly motivated ${title} with strong communication, problem-solving, and teamwork skills. ` +
-      `Known for delivering quality work on time, learning quickly, and adapting in fast-paced environments.`;
+      `Results-driven ${title} with strong communication and organizational skills. ` +
+      `Quick learner with a professional mindset, able to handle responsibilities efficiently and adapt in fast-paced environments. ` +
+      `Actively seeking opportunities to contribute to organizational growth.`;
 
     const defaultSkills = [
       "Communication",
@@ -43,28 +55,55 @@ export default function ResumeBuilderOnline() {
       "Customer Handling",
     ];
 
-    const exp =
-      `• Supported daily operations and handled assigned responsibilities with accuracy.\n` +
-      `• Coordinated with team members to meet targets and deadlines.\n` +
-      `• Maintained documentation and ensured quality standards in day-to-day tasks.`;
+    const skillsLine = skills.trim()
+      ? splitSkills(skills).join(", ")
+      : defaultSkills.join(", ");
 
-    const edu = "Bachelor’s Degree / Equivalent Qualification";
+    const expAutoExperienced =
+      `• Managed day-to-day responsibilities with accuracy and consistent quality.\n` +
+      `• Coordinated with team/stakeholders to meet targets and deadlines.\n` +
+      `• Maintained documentation and improved workflow through process discipline.\n` +
+      `• Demonstrated professionalism, punctuality, and a results-oriented mindset.`;
+
+    const expAutoFresher =
+      `• Assisted in day-to-day operations and handled assigned tasks with accuracy and professionalism.\n` +
+      `• Coordinated with team members to support targets, timelines, and quality standards.\n` +
+      `• Maintained records/documentation and ensured timely completion of responsibilities.\n` +
+      `• Demonstrated professionalism, punctuality, and a results-oriented mindset.`;
+
+    const experienceText =
+      experienceNotes.trim() ||
+      (profile.hasExp ? expAutoExperienced : expAutoFresher);
+
+    const educationText = buildEducation({
+      qualification,
+      fieldOfStudy,
+      institute,
+      gradYear,
+    });
 
     return {
       summary,
-      skills: skills.trim()
-        ? splitSkills(skills).join(", ")
-        : defaultSkills.join(", "),
-      experience: exp,
-      education: edu,
+      skills: skillsLine,
+      experience: experienceText,
+      education: educationText,
     };
-  }, [baseProfile.title, skills]);
+  }, [
+    profile.title,
+    profile.hasExp,
+    skills,
+    experienceNotes,
+    qualification,
+    fieldOfStudy,
+    institute,
+    gradYear,
+  ]);
 
-  const finalResume = useMemo(() => {
-    const title = baseProfile.title;
+  const content = ai || fallback;
+
+  const resumeText = useMemo(() => {
+    const title = profile.title;
     const contact = [email.trim(), mobile.trim()].filter(Boolean).join(" | ");
-
-    const content = ai || fallback;
 
     const lines = [];
     lines.push(fullName.trim().toUpperCase());
@@ -73,23 +112,27 @@ export default function ResumeBuilderOnline() {
     lines.push("");
 
     lines.push("SUMMARY");
+    lines.push(ruleLine());
     lines.push(content.summary);
     lines.push("");
 
     lines.push("SKILLS");
+    lines.push(ruleLine());
     lines.push(content.skills);
     lines.push("");
 
     lines.push("EXPERIENCE");
+    lines.push(ruleLine());
     lines.push(content.experience);
     lines.push("");
 
     lines.push("EDUCATION");
+    lines.push(ruleLine());
     lines.push(content.education);
     lines.push("");
 
     return lines.join("\n");
-  }, [ai, fallback, fullName, email, mobile, baseProfile.title]);
+  }, [fullName, email, mobile, profile.title, content]);
 
   async function generateAI() {
     try {
@@ -110,6 +153,11 @@ export default function ResumeBuilderOnline() {
           jobTitle: jobTitle.trim(),
           expYears: expYears.toString().trim(),
           skills: skills.trim(),
+          qualification: qualification.trim(),
+          fieldOfStudy: fieldOfStudy.trim(),
+          institute: institute.trim(),
+          gradYear: gradYear.trim(),
+          experienceNotes: experienceNotes.trim(),
         }),
       });
 
@@ -142,7 +190,7 @@ export default function ResumeBuilderOnline() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: `${fullName.trim()} - Resume`,
-          content: finalResume,
+          content: resumeText,
         }),
       });
 
@@ -174,27 +222,37 @@ export default function ResumeBuilderOnline() {
         <title>AI Resume Builder Online (ATS Friendly) | ResumeBoost AI</title>
         <meta
           name="description"
-          content="Create a high-professional ATS-friendly resume in minutes. Just enter name, email and mobile — AI writes the rest. Download PDF instantly."
+          content="Create a high-professional ATS-friendly resume in minutes. Enter name, email and mobile — AI writes the rest. Add qualification & experience optionally. Download PDF instantly."
         />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
 
       <main style={S.page}>
         <div style={S.topBar}>
-          <Link href="/" style={S.backLink}>
-            ← Back to ResumeBoost AI
-          </Link>
+          <Link href="/" style={S.backLink}>← Back to ResumeBoost AI</Link>
         </div>
 
-        <h1 style={S.h1}>AI Resume Builder Online</h1>
-        <p style={S.sub}>
-          सिर्फ <b>Name + Email + Mobile</b> डालो — बाकी Summary, Skills, Experience AI बना देगा ✅
-        </p>
+        <div style={S.hero}>
+          <h1 style={S.h1}>AI Resume Builder Online</h1>
+          <p style={S.sub}>
+            सिर्फ <b>Name + Email + Mobile</b> डालो — बाकी Summary, Skills, Experience AI बना देगा ✅
+          </p>
+
+          <div style={S.trustRow}>
+            <span style={S.trustPill}>ATS-Friendly</span>
+            <span style={S.trustPill}>Recruiter Style Format</span>
+            <span style={S.trustPill}>High-Quality PDF</span>
+            <span style={S.trustPill}>No Signup</span>
+          </div>
+        </div>
 
         <div style={S.grid}>
           {/* FORM */}
           <section style={S.card}>
-            <h2 style={S.h2}>Basic details (required)</h2>
+            <div style={S.cardHeader}>
+              <h2 style={S.h2}>Basic details (required)</h2>
+              <span style={S.step}>Step 1</span>
+            </div>
 
             <label style={S.label}>Full Name *</label>
             <input
@@ -203,6 +261,7 @@ export default function ResumeBuilderOnline() {
               onChange={(e) => setFullName(e.target.value)}
               placeholder="e.g. Rahul Sharma"
             />
+            <div style={S.help}>Resume header automatically professional format me set ho jayega.</div>
 
             <div style={S.row}>
               <div style={{ flex: 1 }}>
@@ -225,7 +284,12 @@ export default function ResumeBuilderOnline() {
               </div>
             </div>
 
-            <h3 style={S.h3}>Optional (AI will improve it)</h3>
+            <div style={S.divider} />
+
+            <div style={S.cardHeader}>
+              <h3 style={S.h3}>Optional (AI will improve it)</h3>
+              <span style={S.step}>Step 2</span>
+            </div>
 
             <label style={S.label}>Job Title (optional)</label>
             <input
@@ -234,6 +298,7 @@ export default function ResumeBuilderOnline() {
               onChange={(e) => setJobTitle(e.target.value)}
               placeholder="e.g. Sales Executive / Frontend Developer"
             />
+            <div style={S.help}>Leave empty if unsure — AI best professional title choose karega.</div>
 
             <label style={S.label}>Experience in years (optional)</label>
             <input
@@ -251,14 +316,80 @@ export default function ResumeBuilderOnline() {
               onChange={(e) => setSkills(e.target.value)}
               placeholder="e.g. Excel, Communication, Sales"
             />
+            <div style={S.help}>No worries — skills na bhi likho to AI relevant skills add karega.</div>
 
-            <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+            <div style={S.divider} />
+
+            <div style={S.cardHeader}>
+              <h3 style={S.h3}>Qualification (optional)</h3>
+              <span style={S.step}>Step 3</span>
+            </div>
+
+            <label style={S.label}>Highest Qualification</label>
+            <input
+              style={S.input}
+              value={qualification}
+              onChange={(e) => setQualification(e.target.value)}
+              placeholder="e.g. B.Com / B.Tech / 12th"
+            />
+
+            <div style={S.row}>
+              <div style={{ flex: 1 }}>
+                <label style={S.label}>Field / Stream</label>
+                <input
+                  style={S.input}
+                  value={fieldOfStudy}
+                  onChange={(e) => setFieldOfStudy(e.target.value)}
+                  placeholder="e.g. Commerce / Computer Science"
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={S.label}>Year</label>
+                <input
+                  style={S.input}
+                  value={gradYear}
+                  onChange={(e) => setGradYear(e.target.value)}
+                  placeholder="e.g. 2024"
+                />
+              </div>
+            </div>
+
+            <label style={S.label}>Institute / College</label>
+            <input
+              style={S.input}
+              value={institute}
+              onChange={(e) => setInstitute(e.target.value)}
+              placeholder="e.g. ABC College"
+            />
+
+            <div style={S.divider} />
+
+            <div style={S.cardHeader}>
+              <h3 style={S.h3}>Experience details (optional)</h3>
+              <span style={S.step}>Step 4</span>
+            </div>
+
+            <label style={S.label}>Write your experience (if you want)</label>
+            <textarea
+              style={S.textarea}
+              rows={5}
+              value={experienceNotes}
+              onChange={(e) => setExperienceNotes(e.target.value)}
+              placeholder={`Example:\nSales Executive - XYZ Company (2023-2024)\n• Lead generation & follow-ups\n• Client handling\n• Target support`}
+            />
+            <div style={S.help}>Agar empty chhodo, AI auto professional experience generate karega.</div>
+
+            <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
               <button
                 onClick={generateAI}
                 disabled={generating || !requiredOk}
-                style={{ ...S.btn, background: "#0ea5e9", opacity: generating || !requiredOk ? 0.7 : 1 }}
+                style={{
+                  ...S.btn,
+                  background: "#0ea5e9",
+                  opacity: generating || !requiredOk ? 0.7 : 1,
+                }}
               >
-                {generating ? "Generating..." : "Generate Professional Resume (AI)"}
+                {generating ? "Building..." : "✨ Build My Professional Resume (AI)"}
               </button>
 
               <button
@@ -266,24 +397,44 @@ export default function ResumeBuilderOnline() {
                 disabled={downloading || !requiredOk}
                 style={{ ...S.btn, opacity: downloading || !requiredOk ? 0.7 : 1 }}
               >
-                {downloading ? "Generating PDF..." : "Download PDF"}
+                {downloading ? "Generating..." : "Download PDF"}
               </button>
             </div>
 
-            <p style={S.note}>
-              ✅ अगर AI button नहीं दबाओगे, तब भी preview auto‑professional रहेगा (fallback).
-            </p>
+            <div style={S.smallLine}>High-quality PDF • Print & Email Ready</div>
+            <div style={S.note}>
+              ✅ Agar AI button nahi dabao, tab bhi preview auto-professional rahega (fallback).
+            </div>
           </section>
 
           {/* PREVIEW */}
           <section style={S.card}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-              <h2 style={S.h2}>High‑Professional Preview</h2>
+            <div style={S.cardHeader}>
+              <h2 style={S.h2}>Premium Preview</h2>
               <span style={S.badge}>{ai ? "AI Generated" : "Auto (Fallback)"}</span>
             </div>
-            <pre style={S.preview}>{finalResume}</pre>
+
+            <div style={S.whyBox}>
+              <div style={S.whyTitle}>Why recruiters like this resume</div>
+              <div style={S.whyList}>
+                <div>✔ Clean & professional formatting</div>
+                <div>✔ ATS-friendly keywords</div>
+                <div>✔ No unnecessary design elements</div>
+                <div>✔ Ready for fresher & experienced roles</div>
+              </div>
+            </div>
+
+            <pre style={S.preview}>{resumeText}</pre>
           </section>
         </div>
+
+        <style jsx>{`
+          @media (min-width: 980px) {
+            .grid2 {
+              grid-template-columns: 1.05fr 0.95fr;
+            }
+          }
+        `}</style>
       </main>
     </>
   );
@@ -297,59 +448,126 @@ function splitSkills(text) {
     .slice(0, 20);
 }
 
+function ruleLine() {
+  return "────────────";
+}
+
+function buildEducation({ qualification, fieldOfStudy, institute, gradYear }) {
+  const q = (qualification || "").trim();
+  const f = (fieldOfStudy || "").trim();
+  const i = (institute || "").trim();
+  const y = (gradYear || "").trim();
+
+  // If user filled something, format nicely
+  if (q || f || i || y) {
+    const left = [q, f].filter(Boolean).join(" - ");
+    const right = [i, y].filter(Boolean).join(" | ");
+    if (left && right) return `${left}\n${right}`;
+    if (left) return left;
+    if (right) return right;
+  }
+
+  // Default safe
+  return "Bachelor’s Degree / Equivalent Qualification";
+}
+
 const S = {
-  page: { maxWidth: 1100, margin: "0 auto", padding: 18, fontFamily: "system-ui" },
+  page: { maxWidth: 1120, margin: "0 auto", padding: 18, fontFamily: "system-ui" },
   topBar: { marginBottom: 10 },
-  backLink: { textDecoration: "none", fontWeight: 800 },
-  h1: { margin: "10px 0 0", fontSize: 34, fontWeight: 900 },
-  sub: { marginTop: 8, color: "#4b5563" },
+  backLink: { textDecoration: "none", fontWeight: 900 },
+
+  hero: { marginTop: 6, marginBottom: 14 },
+  h1: { margin: "10px 0 0", fontSize: 36, fontWeight: 950, letterSpacing: "-0.02em" },
+  sub: { marginTop: 8, color: "#4b5563", lineHeight: 1.55 },
+
+  trustRow: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 },
+  trustPill: {
+    fontSize: 12,
+    fontWeight: 800,
+    padding: "7px 10px",
+    borderRadius: 999,
+    border: "1px solid #e5e7eb",
+    background: "#f9fafb",
+  },
+
   grid: {
     display: "grid",
     gridTemplateColumns: "1fr",
     gap: 16,
     marginTop: 18,
   },
+
   card: {
     border: "1px solid #e5e7eb",
-    borderRadius: 14,
+    borderRadius: 16,
     padding: 16,
     background: "#fff",
     boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
   },
-  h2: { margin: 0, fontSize: 16, fontWeight: 900 },
-  h3: { marginTop: 16, marginBottom: 0, fontSize: 13, fontWeight: 900, color: "#374151" },
-  label: { display: "block", marginTop: 12, marginBottom: 6, fontWeight: 800, fontSize: 13 },
-  input: { width: "100%", padding: 10, borderRadius: 10, border: "1px solid #d1d5db" },
-  textarea: { width: "100%", padding: 10, borderRadius: 10, border: "1px solid #d1d5db" },
-  row: { display: "flex", gap: 10, marginTop: 6 },
-  btn: {
-    flex: 1,
-    padding: "12px 14px",
-    borderRadius: 10,
-    border: "none",
-    background: "#16a34a",
-    color: "#fff",
-    fontWeight: 900,
-    cursor: "pointer",
-  },
-  note: { marginTop: 10, fontSize: 12, color: "#6b7280" },
-  preview: {
-    marginTop: 12,
-    whiteSpace: "pre-wrap",
-    background: "#f9fafb",
-    border: "1px solid #e5e7eb",
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 13,
-    lineHeight: 1.6,
-    minHeight: 420,
-  },
-  badge: {
+
+  cardHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  h2: { margin: 0, fontSize: 16, fontWeight: 950 },
+  h3: { margin: 0, fontSize: 13, fontWeight: 950, color: "#374151" },
+
+  step: {
     fontSize: 12,
     fontWeight: 900,
     padding: "6px 10px",
     borderRadius: 999,
     border: "1px solid #e5e7eb",
+    background: "#fff",
+  },
+
+  label: { display: "block", marginTop: 12, marginBottom: 6, fontWeight: 900, fontSize: 13 },
+  input: { width: "100%", padding: 10, borderRadius: 12, border: "1px solid #d1d5db" },
+  textarea: { width: "100%", padding: 10, borderRadius: 12, border: "1px solid #d1d5db" },
+  row: { display: "flex", gap: 10, marginTop: 6 },
+
+  help: { marginTop: 6, fontSize: 12, color: "#6b7280" },
+  divider: { height: 1, background: "#f3f4f6", marginTop: 16 },
+
+  btn: {
+    flex: 1,
+    padding: "12px 14px",
+    borderRadius: 12,
+    border: "none",
+    background: "#16a34a",
+    color: "#fff",
+    fontWeight: 950,
+    cursor: "pointer",
+  },
+
+  smallLine: { marginTop: 10, fontSize: 12, color: "#6b7280", fontWeight: 700 },
+  note: { marginTop: 10, fontSize: 12, color: "#6b7280" },
+
+  badge: {
+    fontSize: 12,
+    fontWeight: 950,
+    padding: "6px 10px",
+    borderRadius: 999,
+    border: "1px solid #e5e7eb",
     background: "#f9fafb",
+  },
+
+  whyBox: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 14,
+    border: "1px solid #e5e7eb",
+    background: "#f9fafb",
+  },
+  whyTitle: { fontWeight: 950, fontSize: 13, marginBottom: 8 },
+  whyList: { fontSize: 12, color: "#374151", display: "grid", gap: 4 },
+
+  preview: {
+    marginTop: 12,
+    whiteSpace: "pre-wrap",
+    background: "#ffffff",
+    border: "1px solid #e5e7eb",
+    borderRadius: 14,
+    padding: 14,
+    fontSize: 13,
+    lineHeight: 1.65,
+    minHeight: 520,
   },
 };

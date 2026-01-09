@@ -2,123 +2,141 @@ import { useMemo, useState } from "react";
 import Head from "next/head";
 import Link from "next/link";
 
+const QUALIFICATIONS = [
+  "10th",
+  "12th",
+  "ITI",
+  "Diploma",
+  "Bachelor (UG)",
+  "Master (PG)",
+  "PhD",
+];
+
+function yearOptions(start = 1980) {
+  const now = new Date().getFullYear();
+  const arr = [];
+  for (let y = now; y >= start; y--) arr.push(String(y));
+  return arr;
+}
+
+// A–Z searchable list (common jobs) + user can still type custom if needed (optional)
+const JOB_TITLES = [
+  "Accountant",
+  "Administrative Assistant",
+  "Android Developer",
+  "Auto Mechanic",
+  "Backend Developer",
+  "Barber",
+  "Business Development Executive",
+  "Call Center Executive",
+  "Cashier",
+  "Civil Engineer",
+  "Content Writer",
+  "Customer Support Executive",
+  "Data Analyst",
+  "Delivery Driver",
+  "Digital Marketer",
+  "Electrician",
+  "Frontend Developer",
+  "Graphic Designer",
+  "HR Executive",
+  "Hotel Receptionist",
+  "Java Developer",
+  "Lab Technician",
+  "Machine Operator",
+  "Marketing Executive",
+  "Nurse",
+  "Office Boy",
+  "Pharmacist",
+  "Plumber",
+  "Project Manager",
+  "Quality Analyst",
+  "Receptionist",
+  "Sales Executive",
+  "Security Guard",
+  "SEO Executive",
+  "Store Manager",
+  "Teacher",
+  "UI/UX Designer",
+  "Video Editor",
+  "Warehouse Executive",
+  "Web Developer",
+  "X-ray Technician",
+  "Yoga Instructor",
+  "Zonal Sales Manager",
+];
+
+// Skills suggestions by role keyword
+const ROLE_SKILLS = [
+  { k: ["mechanic", "auto"], s: ["Diagnostics", "Vehicle Servicing", "Engine Repair", "Brakes & Suspension", "Tool Handling", "Safety Compliance"] },
+  { k: ["sales"], s: ["Lead Generation", "Negotiation", "Follow-ups", "CRM", "Closing", "Customer Handling"] },
+  { k: ["developer", "frontend", "backend", "web"], s: ["JavaScript", "HTML/CSS", "APIs", "Git", "Debugging", "Deployment"] },
+  { k: ["account", "billing", "invoice"], s: ["MS Excel", "Invoice Processing", "Reconciliation", "Reporting", "Data Accuracy", "Tally (optional)"] },
+  { k: ["support", "customer", "call"], s: ["Communication", "Ticket Handling", "Issue Tracking", "Escalation", "Follow-up", "Problem Solving"] },
+  { k: ["teacher"], s: ["Lesson Planning", "Classroom Management", "Student Assessment", "Communication", "Subject Knowledge", "Activity Coordination"] },
+  { k: ["designer", "ui", "ux", "graphic"], s: ["Figma", "Wireframing", "Typography", "Color Theory", "Design Systems", "Prototyping"] },
+];
+
+function pickRoleSkills(jobTitle) {
+  const t = (jobTitle || "").toLowerCase();
+  for (const r of ROLE_SKILLS) {
+    if (r.k.some((x) => t.includes(x))) return r.s;
+  }
+  return ["Communication", "Teamwork", "Time Management", "Problem Solving", "MS Office / Digital Tools", "Quick Learning"];
+}
+
 export default function ResumeBuilderOnline() {
   // Required
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [mobile, setMobile] = useState("");
 
-  // Optional
-  const [jobTitle, setJobTitle] = useState("");
-  const [expYears, setExpYears] = useState("");
-  const [companyName, setCompanyName] = useState("");
-  const [experienceDetails, setExperienceDetails] = useState("");
-  const [skills, setSkills] = useState("");
-
   // Education
-  const [highestQualification, setHighestQualification] = useState("");
-  const [fieldOfStudy, setFieldOfStudy] = useState("");
-  const [graduationYear, setGraduationYear] = useState("");
+  const [qualification, setQualification] = useState("10th");
+  const [passoutYear, setPassoutYear] = useState(String(new Date().getFullYear()));
 
-  // AI
+  // Experience
+  const [expType, setExpType] = useState("Fresher"); // Fresher | Experienced
+  const [companiesCount, setCompaniesCount] = useState(1);
+  const [companies, setCompanies] = useState([
+    { companyName: "", startDate: "", endDate: "" },
+  ]);
+
+  // Job Title (search + select)
+  const [jobTitle, setJobTitle] = useState("");
+  const suggestedSkills = useMemo(() => pickRoleSkills(jobTitle), [jobTitle]);
+
+  // Skills select (multi)
+  const [selectedSkills, setSelectedSkills] = useState([]);
+
+  // Result from API (role-based 6 points non-repeat)
   const [ai, setAi] = useState(null);
-  const [generating, setGenerating] = useState(false);
-  const [downloading, setDownloading] = useState(false);
+  const [building, setBuilding] = useState(false);
 
   const requiredOk = fullName.trim() && email.trim() && mobile.trim();
 
-  const baseProfile = useMemo(() => {
-    const title = jobTitle.trim() || "Professional Executive";
-    const years = (expYears || "").toString().trim();
-    const yrs = years ? `${years}+ years` : "";
-    return { title, yrs };
-  }, [jobTitle, expYears]);
-
-  const educationLine = useMemo(() => {
-    const q = highestQualification.trim();
-    const f = fieldOfStudy.trim();
-    const y = graduationYear.trim();
-
-    if (q || f || y) {
-      const left = [q || "Bachelor’s Degree", f ? `– ${f}` : ""].join(" ").trim();
-      const right = y ? `Year: ${y}` : "";
-      return [left, right].filter(Boolean).join(" | ");
-    }
-    return "Bachelor’s Degree / Equivalent Qualification";
-  }, [highestQualification, fieldOfStudy, graduationYear]);
-
-  const fallback = useMemo(() => {
-    const title = baseProfile.title;
-
-    const summary =
-      `Results-driven ${title} with strong communication and organizational skills. ` +
-      `Quick learner with a disciplined approach, known for delivering quality work on time and adapting in fast-paced environments.`;
-
-    const defaultSkills = [
-      "Communication",
-      "Team Collaboration",
-      "Problem Solving",
-      "Time Management",
-      "MS Office / Digital Tools",
-      "Customer Handling",
-    ];
-
-    const skillsText = skills.trim()
-      ? splitSkills(skills).join(", ")
-      : defaultSkills.join(", ");
-
-    const exp = buildExperienceFallback({
-      title,
-      companyName,
-      experienceDetails,
-      expYears,
+  // keep companies array length synced
+  function setCompaniesByCount(n) {
+    setCompaniesCount(n);
+    setCompanies((prev) => {
+      const next = [...prev];
+      while (next.length < n) next.push({ companyName: "", startDate: "", endDate: "" });
+      return next.slice(0, n);
     });
+  }
 
-    return {
-      summary,
-      skills: skillsText,
-      experience: exp,
-      education: educationLine,
-    };
-  }, [baseProfile.title, skills, educationLine, companyName, experienceDetails, expYears]);
+  function toggleSkill(skill) {
+    setSelectedSkills((prev) => {
+      if (prev.includes(skill)) return prev.filter((s) => s !== skill);
+      return [...prev, skill].slice(0, 12);
+    });
+  }
 
-  const finalData = useMemo(() => ai || fallback, [ai, fallback]);
-
-  const finalResume = useMemo(() => {
-    const title = baseProfile.title;
-    const contact = [email.trim(), mobile.trim()].filter(Boolean).join(" | ");
-    const sep = "────────────────────────────────";
-
-    const lines = [];
-    lines.push(fullName.trim().toUpperCase());
-    lines.push(title + (baseProfile.yrs ? ` (${baseProfile.yrs})` : ""));
-    if (contact) lines.push(contact);
-    lines.push(sep);
-
-    lines.push("SUMMARY");
-    lines.push(finalData.summary);
-    lines.push("");
-
-    lines.push("SKILLS");
-    lines.push(finalData.skills);
-    lines.push("");
-
-    lines.push("EXPERIENCE");
-    lines.push(finalData.experience);
-    lines.push("");
-
-    lines.push("EDUCATION");
-    lines.push(finalData.education);
-    lines.push("");
-
-    return lines.join("\n");
-  }, [finalData, fullName, email, mobile, baseProfile.title, baseProfile.yrs]);
-
-  async function generateAI() {
-    if (!requiredOk) return alert("Please fill Full Name, Email, Mobile.");
+  async function buildResume() {
+    if (!requiredOk) return alert("Name, Email, Mobile required.");
 
     try {
-      setGenerating(true);
+      setBuilding(true);
       setAi(null);
 
       const r = await fetch("/api/ai-resume", {
@@ -126,103 +144,86 @@ export default function ResumeBuilderOnline() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fullName: fullName.trim(),
+          email: email.trim(),
+          mobile: mobile.trim(),
+
+          qualification,
+          passoutYear,
+
+          expType,
+          companies: expType === "Experienced" ? companies : [],
+
           jobTitle: jobTitle.trim(),
-          expYears: expYears.toString().trim(),
-          skills: skills.trim(),
-
-          highestQualification: highestQualification.trim(),
-          fieldOfStudy: fieldOfStudy.trim(),
-          graduationYear: graduationYear.trim(),
-
-          companyName: companyName.trim(),
-          experienceDetails: experienceDetails.trim(),
+          skillsSelected: selectedSkills,
         }),
       });
 
       const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data?.error || "AI generate failed");
-
-      setAi({
-        summary: data.summary,
-        skills: data.skills,
-        experience: data.experience,
-        education: data.education,
-      });
+      if (!r.ok) throw new Error(data?.error || "Build failed");
+      setAi(data);
     } catch (e) {
-      alert(e?.message || "AI error");
+      alert(e?.message || "Error");
     } finally {
-      setGenerating(false);
+      setBuilding(false);
     }
   }
 
-  async function downloadPdf() {
-    if (!requiredOk) return alert("Please fill Full Name, Email, Mobile.");
+  const preview = useMemo(() => {
+    const sep = "----------------------------------------";
+    const lines = [];
+    lines.push(fullName.trim().toUpperCase());
+    lines.push(jobTitle ? jobTitle : "Professional Executive");
+    lines.push([email.trim(), mobile.trim()].filter(Boolean).join(" | "));
+    lines.push(sep);
 
-    try {
-      setDownloading(true);
+    lines.push("EDUCATION");
+    lines.push(`${qualification} | Passout: ${passoutYear}`);
+    lines.push("");
 
-      const r = await fetch("/api/download-pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fileName: `${fullName.trim().replaceAll(" ", "_")}_Resume.pdf`,
-          content: finalResume,
-        }),
+    lines.push("SKILLS");
+    const skillsText = (ai?.skills?.length ? ai.skills : selectedSkills).join(", ");
+    lines.push(skillsText || "—");
+    lines.push("");
+
+    lines.push("EXPERIENCE");
+    if (expType === "Fresher") {
+      lines.push("Fresher");
+    } else {
+      companies.forEach((c, idx) => {
+        lines.push(`Company ${idx + 1}: ${c.companyName || "-"}`);
+        lines.push(`Duration: ${c.startDate || "-"} to ${c.endDate || "-"}`);
       });
-
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error(err?.error || "PDF download failed");
-      }
-
-      const blob = await r.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${fullName.trim().replaceAll(" ", "_")}_Resume.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (e) {
-      alert(e?.message || "Download error");
-    } finally {
-      setDownloading(false);
     }
-  }
+    lines.push("");
+
+    lines.push("ROLE-BASED POINTS");
+    (ai?.experiencePoints || []).forEach((p) => lines.push(`• ${p}`));
+
+    return lines.join("\n");
+  }, [fullName, email, mobile, jobTitle, qualification, passoutYear, expType, companies, selectedSkills, ai]);
 
   return (
     <>
       <Head>
-        <title>AI Resume Builder Online (ATS Friendly) | ResumeBoost AI</title>
-        <meta
-          name="description"
-          content="Create a high-professional ATS-friendly resume in minutes. Just enter name, email and mobile — AI writes the rest. Download PDF instantly."
-        />
+        <title>AI Resume Builder Online | ResumeBoost AI</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
 
       <main className="page">
         <div className="topRow">
-          <Link href="/" className="backLink">← Back to ResumeBoost AI</Link>
-          <span className="topBadge">ATS‑Friendly • Recruiter‑Approved Format</span>
+          <Link className="back" href="/">← Back</Link>
+          <span className="pill">Only Name+Email+Mobile required ✅</span>
         </div>
 
         <h1 className="h1">AI Resume Builder Online</h1>
         <p className="sub">
-          सिर्फ <b>Name + Email + Mobile</b> डालो — बाकी Summary, Skills, Experience, Education AI बना देगा ✅
+          Job Title select karo → skills + points auto → minimum 6 unique points
         </p>
-
-        <div className="trustRow">
-          <div className="trustPill">✅ Clean formatting</div>
-          <div className="trustPill">✅ ATS safe</div>
-          <div className="trustPill">✅ Print & Email ready</div>
-        </div>
 
         <div className="grid">
           {/* FORM */}
           <section className="card">
-            <h2 className="h2">Basic details (required)</h2>
+            <h2 className="h2">Basic Details</h2>
 
             <label className="label">Full Name *</label>
             <input className="input" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="e.g. Rahul Sharma" />
@@ -238,153 +239,171 @@ export default function ResumeBuilderOnline() {
               </div>
             </div>
 
-            <h3 className="h3">Optional (AI will improve it)</h3>
-
-            <label className="label">Job Title</label>
-            <input className="input" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} placeholder="e.g. Mechanic / Sales Executive" />
-
-            <label className="label">Experience in years</label>
-            <input className="input" value={expYears} onChange={(e) => setExpYears(e.target.value)} placeholder="e.g. 4" />
-
-            <label className="label">Company Name</label>
-            <input className="input" value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="e.g. XYZ Garage" />
-
-            <label className="label">Experience details</label>
-            <textarea
-              className="textarea"
-              rows={4}
-              value={experienceDetails}
-              onChange={(e) => setExperienceDetails(e.target.value)}
-              placeholder={`Example:\nMechanic – XYZ Garage (2020–2024)\n• Vehicle servicing & repair\n• Diagnostics & maintenance\n• Customer handling`}
-            />
-
-            <label className="label">Qualification / Education</label>
+            <h3 className="h3">Education</h3>
             <div className="row">
               <div className="col">
-                <input className="input" value={highestQualification} onChange={(e) => setHighestQualification(e.target.value)} placeholder="e.g. 10th / Diploma" />
+                <label className="label">Highest Qualification</label>
+                <select className="input" value={qualification} onChange={(e) => setQualification(e.target.value)}>
+                  {QUALIFICATIONS.map((q) => <option key={q} value={q}>{q}</option>)}
+                </select>
               </div>
               <div className="col">
-                <input className="input" value={fieldOfStudy} onChange={(e) => setFieldOfStudy(e.target.value)} placeholder="e.g. Mechanical" />
+                <label className="label">Passout Year</label>
+                <select className="input" value={passoutYear} onChange={(e) => setPassoutYear(e.target.value)}>
+                  {yearOptions(1980).map((y) => <option key={y} value={y}>{y}</option>)}
+                </select>
               </div>
             </div>
 
-            <label className="label">Passing Year</label>
-            <input className="input" value={graduationYear} onChange={(e) => setGraduationYear(e.target.value)} placeholder="e.g. 2022" />
+            <h3 className="h3">Experience</h3>
+            <div className="row">
+              <div className="col">
+                <label className="label">Select</label>
+                <select className="input" value={expType} onChange={(e) => setExpType(e.target.value)}>
+                  <option value="Fresher">Fresher</option>
+                  <option value="Experienced">Experienced</option>
+                </select>
+              </div>
 
-            <label className="label">Skills</label>
-            <textarea className="textarea" rows={3} value={skills} onChange={(e) => setSkills(e.target.value)} placeholder="e.g. Engine Repair, Diagnostics, Teamwork" />
-
-            <div className="btnRow">
-              <button className="btn btnBlue" onClick={generateAI} disabled={generating || !requiredOk}>
-                {generating ? "Building..." : "✨ Build My Professional Resume (AI)"}
-              </button>
-
-              <button className="btn btnGreen" onClick={downloadPdf} disabled={downloading || !requiredOk}>
-                {downloading ? "Generating PDF..." : "Download PDF"}
-              </button>
+              {expType === "Experienced" && (
+                <div className="col">
+                  <label className="label">No. of Companies</label>
+                  <select
+                    className="input"
+                    value={companiesCount}
+                    onChange={(e) => setCompaniesByCount(parseInt(e.target.value, 10))}
+                  >
+                    {[1, 2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+              )}
             </div>
 
-            <div className="smallLine">Free preview • PDF download from server</div>
+            {expType === "Experienced" && (
+              <div className="companyWrap">
+                {companies.map((c, idx) => (
+                  <div key={idx} className="companyCard">
+                    <div className="companyTitle">Company {idx + 1}</div>
+
+                    <label className="label">Company Name</label>
+                    <input
+                      className="input"
+                      value={c.companyName}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setCompanies((prev) => prev.map((x, i) => (i === idx ? { ...x, companyName: v } : x)));
+                      }}
+                      placeholder="e.g. Mahindra & Mahindra"
+                    />
+
+                    <div className="row">
+                      <div className="col">
+                        <label className="label">Start Date</label>
+                        <input
+                          className="input"
+                          type="date"
+                          value={c.startDate}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setCompanies((prev) => prev.map((x, i) => (i === idx ? { ...x, startDate: v } : x)));
+                          }}
+                        />
+                      </div>
+                      <div className="col">
+                        <label className="label">End Date</label>
+                        <input
+                          className="input"
+                          type="date"
+                          value={c.endDate}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setCompanies((prev) => prev.map((x, i) => (i === idx ? { ...x, endDate: v } : x)));
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <h3 className="h3">Job Title</h3>
+            <label className="label">Search & Select (A–Z)</label>
+            <input
+              className="input"
+              list="jobTitles"
+              value={jobTitle}
+              onChange={(e) => setJobTitle(e.target.value)}
+              placeholder="Select job title..."
+            />
+            <datalist id="jobTitles">
+              {JOB_TITLES.map((t) => <option key={t} value={t} />)}
+            </datalist>
+            <div className="hint">User typing avoid ho gaya — search karke select karega.</div>
+
+            <h3 className="h3">Skills (auto suggestions)</h3>
+            <div className="skillsGrid">
+              {suggestedSkills.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  className={"skillBtn" + (selectedSkills.includes(s) ? " skillOn" : "")}
+                  onClick={() => toggleSkill(s)}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+            <div className="hint">Select karo — points resume me use honge.</div>
+
+            <div className="btnRow">
+              <button className="btn" disabled={!requiredOk || building} onClick={buildResume}>
+                {building ? "Building..." : "Build Resume (Role Based)"}
+              </button>
+            </div>
           </section>
 
           {/* PREVIEW */}
           <section className="card">
             <div className="previewTop">
-              <h2 className="h2">Professional Preview</h2>
-              <span className="badge">{ai ? "AI Generated" : "Auto (Fallback)"}</span>
+              <h2 className="h2">Preview</h2>
+              <span className="pillSmall">{ai ? "Generated" : "Live Preview"}</span>
             </div>
-
-            <div className="whyBox">
-              <div className="whyTitle">Why recruiters like this</div>
-              <ul className="whyList">
-                <li>Clean, ATS-friendly structure</li>
-                <li>Good keywords + readable layout</li>
-                <li>Works for fresher & experienced</li>
-              </ul>
-            </div>
-
-            <pre className="preview">{finalResume}</pre>
+            <pre className="preview">{preview}</pre>
           </section>
         </div>
 
         <style jsx>{`
           .page{max-width:1140px;margin:0 auto;padding:18px;font-family:system-ui;background:#f3f4f6;min-height:100vh}
-          .topRow{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
-          .backLink{text-decoration:none;font-weight:900;color:#111827}
-          .topBadge{font-size:12px;font-weight:900;padding:6px 10px;border-radius:999px;border:1px solid #e5e7eb;background:#f9fafb;color:#374151}
-          .h1{margin:10px 0 0;font-size:36px;font-weight:950;letter-spacing:-0.02em}
-          .sub{margin-top:8px;color:#4b5563;line-height:1.6}
-          .trustRow{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
-          .trustPill{font-size:12px;font-weight:800;padding:6px 10px;border-radius:999px;background:#ecfeff;border:1px solid #cffafe;color:#075985}
-          .grid{display:grid;grid-template-columns:1fr;gap:16px;margin-top:18px}
-          @media(min-width:1024px){ .grid{grid-template-columns:1fr 1fr;} }
-          .card{border:1px solid #e5e7eb;border-radius:16px;padding:16px;background:#fff;box-shadow:0 14px 36px rgba(0,0,0,0.06)}
+          .topRow{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+          .back{font-weight:900;color:#111827;text-decoration:none}
+          .pill{font-size:12px;font-weight:900;padding:6px 10px;border-radius:999px;border:1px solid #e5e7eb;background:#fff}
+          .h1{margin:10px 0 0;font-size:34px;font-weight:950}
+          .sub{margin-top:6px;color:#4b5563}
+          .grid{display:grid;grid-template-columns:1fr;gap:16px;margin-top:16px}
+          @media(min-width:1024px){.grid{grid-template-columns:1fr 1fr}}
+          .card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:16px;box-shadow:0 14px 36px rgba(0,0,0,.06)}
           .h2{margin:0;font-size:16px;font-weight:950}
           .h3{margin-top:16px;margin-bottom:0;font-size:13px;font-weight:950;color:#374151}
-          .label{display:block;margin-top:12px;margin-bottom:6px;font-weight:900;font-size:13px;color:#111827}
-          .input,.textarea{width:100%;padding:11px;border-radius:12px;border:1px solid #d1d5db;outline:none;background:#fff}
-          .textarea{resize:vertical}
+          .label{display:block;margin-top:12px;margin-bottom:6px;font-weight:900;font-size:13px}
+          .input{width:100%;padding:11px;border-radius:12px;border:1px solid #d1d5db;outline:none;background:#fff}
           .row{display:flex;gap:10px;flex-wrap:wrap}
           .col{flex:1;min-width:220px}
-          .btnRow{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
-          .btn{flex:1;min-width:220px;padding:12px 14px;border-radius:12px;border:none;color:#fff;font-weight:950;cursor:pointer}
+          .hint{margin-top:6px;font-size:12px;color:#6b7280}
+          .companyWrap{margin-top:10px;display:flex;flex-direction:column;gap:10px}
+          .companyCard{border:1px solid #e5e7eb;border-radius:14px;padding:12px;background:#f9fafb}
+          .companyTitle{font-weight:950;font-size:13px;color:#111827}
+          .skillsGrid{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+          .skillBtn{border:1px solid #e5e7eb;background:#fff;border-radius:999px;padding:8px 12px;font-weight:800;font-size:12px;cursor:pointer}
+          .skillOn{border-color:#16a34a;color:#16a34a}
+          .btnRow{margin-top:14px}
+          .btn{width:100%;padding:12px 14px;border-radius:12px;border:none;background:#0ea5e9;color:#fff;font-weight:950;cursor:pointer}
           .btn:disabled{opacity:.7;cursor:not-allowed}
-          .btnBlue{background:#0ea5e9}
-          .btnGreen{background:#16a34a}
-          .smallLine{margin-top:10px;font-size:12px;color:#6b7280;font-weight:700}
-          .previewTop{display:flex;align-items:center;justify-content:space-between;gap:10px}
-          .badge{font-size:12px;font-weight:950;padding:6px 10px;border-radius:999px;border:1px solid #e5e7eb;background:#f9fafb;color:#374151}
-          .whyBox{margin-top:12px;border-radius:14px;border:1px solid #e5e7eb;background:#f9fafb;padding:12px}
-          .whyTitle{font-weight:950;font-size:13px;margin-bottom:8px}
-          .whyList{margin:0;padding-left:18px;color:#374151;font-size:13px;line-height:1.6}
-          .preview{margin-top:12px;white-space:pre-wrap;background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;padding:14px;font-size:13px;line-height:1.65;min-height:520px}
+          .previewTop{display:flex;justify-content:space-between;align-items:center;gap:10px}
+          .pillSmall{font-size:12px;font-weight:900;padding:6px 10px;border-radius:999px;border:1px solid #e5e7eb;background:#f9fafb}
+          .preview{margin-top:12px;white-space:pre-wrap;border:1px solid #e5e7eb;border-radius:14px;padding:14px;font-size:13px;line-height:1.65;min-height:520px}
         `}</style>
       </main>
     </>
-  );
-}
-
-function splitSkills(text) {
-  return (text || "")
-    .split(/,|\n/)
-    .map((x) => x.trim())
-    .filter(Boolean)
-    .slice(0, 20);
-}
-
-function buildExperienceFallback({ title, companyName, experienceDetails, expYears }) {
-  const yearsNum = parseInt((expYears || "").toString().trim(), 10);
-  const hasExp = !Number.isNaN(yearsNum) && yearsNum > 0;
-  const compLine = companyName?.trim() ? `Company: ${companyName.trim()}` : "";
-  const userDetails = (experienceDetails || "").trim();
-
-  if (userDetails) {
-    const bullets = userDetails
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean)
-      .map((l) => (l.startsWith("•") ? l : `• ${l}`))
-      .slice(0, 10)
-      .join("\n");
-
-    return [`Role: ${title}`, compLine, "", bullets].filter(Boolean).join("\n");
-  }
-
-  if (hasExp) {
-    return (
-      `Role: ${title}\n` +
-      (compLine ? `${compLine}\n\n` : "\n") +
-      `• Delivered consistent quality work on time\n` +
-      `• Coordinated with team and followed process discipline\n` +
-      `• Maintained documentation and handled responsibilities professionally`
-    );
-  }
-
-  return (
-    `Role: ${title}\n` +
-    (compLine ? `${compLine}\n\n` : "\n") +
-    `• Assisted in day-to-day work with accuracy and professionalism\n` +
-    `• Supported team timelines and maintained records\n` +
-    `• Demonstrated punctuality and willingness to learn`
   );
 }

@@ -49,7 +49,7 @@ const JOB_TITLES = [
   "Courier Executive",
   "Security Guard",
   "Watchman",
-  "Bouncer'S",
+  "Bouncer",
   "Housekeeping Staff",
   "Cleaner",
   "Office Boy",
@@ -159,6 +159,9 @@ export default function ResumeBuilderOnline() {
   const [email, setEmail] = useState("");
   const [mobile, setMobile] = useState("");
 
+  // ✅ NEW: Full Street Address
+  const [fullAddress, setFullAddress] = useState("");
+
   // Profile extras
   const [city, setCity] = useState("");
   const [stateName, setStateName] = useState("");
@@ -211,40 +214,43 @@ export default function ResumeBuilderOnline() {
     setSelectedSkills((prev) => (prev.includes(skill) ? prev.filter((s) => s !== skill) : [...prev, skill].slice(0, 14)));
   }
 
+  function buildClientPayload() {
+    return {
+      fullName: fullName.trim(),
+      email: email.trim(),
+      mobile: mobile.trim(),
+
+      // ✅ Address fields
+      fullAddress: fullAddress.trim(),
+      city: city.trim(),
+      state: stateName.trim(),
+      pincode: pincode.trim(),
+
+      languages,
+      availability,
+      licenseId: licenseId.trim(),
+
+      qualification,
+      passoutYear,
+      expType,
+      companies: expType === "Experienced" ? companies : [],
+      jobTitle: jobTitle.trim(),
+      skillsSelected: selectedSkills,
+      certificationsSelected: certifications,
+    };
+  }
+
   async function buildResume() {
     if (!requiredOk) return alert("Please fill Full Name, Email, Mobile.");
-    if (mobile.trim().length < 10) {
-      // optional validation
-      // return alert("Mobile number 10 digits hona chahiye.");
-    }
 
     try {
       setBuilding(true);
       setGenerated(null);
 
-      const payload = {
-        fullName: fullName.trim(),
-        email: email.trim(),
-        mobile: mobile.trim(),
-        city: city.trim(),
-        state: stateName.trim(),
-        pincode: pincode.trim(),
-        languages,
-        availability,
-        licenseId: licenseId.trim(),
-        qualification,
-        passoutYear,
-        expType,
-        companies: expType === "Experienced" ? companies : [],
-        jobTitle: jobTitle.trim(),
-        skillsSelected: selectedSkills,
-        certificationsSelected: certifications,
-      };
-
       const r = await fetch("/api/ai-resume", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(buildClientPayload()),
       });
 
       const data = await r.json().catch(() => ({}));
@@ -265,32 +271,16 @@ export default function ResumeBuilderOnline() {
 
       // Ensure we have generated
       let gen = generated;
+
+      // If not generated yet, call API directly (no state waiting)
       if (!gen) {
-        await buildResume();
-        // state async -> call api directly
         const r2 = await fetch("/api/ai-resume", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fullName: fullName.trim(),
-            email: email.trim(),
-            mobile: mobile.trim(),
-            city: city.trim(),
-            state: stateName.trim(),
-            pincode: pincode.trim(),
-            languages,
-            availability,
-            licenseId: licenseId.trim(),
-            qualification,
-            passoutYear,
-            expType,
-            companies: expType === "Experienced" ? companies : [],
-            jobTitle: jobTitle.trim(),
-            skillsSelected: selectedSkills,
-            certificationsSelected: certifications,
-          }),
+          body: JSON.stringify(buildClientPayload()),
         });
         gen = await r2.json();
+        if (!r2.ok) throw new Error(gen?.error || "Build failed");
       }
 
       const r = await fetch("/api/download-pdf", {
@@ -331,8 +321,13 @@ export default function ResumeBuilderOnline() {
     lines.push(fullName.trim().toUpperCase() || "YOUR NAME");
     lines.push(title);
     lines.push([email.trim(), mobile.trim()].filter(Boolean).join(" | "));
-    const loc = [city.trim(), stateName.trim(), pincode.trim()].filter(Boolean).join(", ");
+
+    // ✅ Full address line
+    const loc = [fullAddress.trim(), city.trim(), stateName.trim(), pincode.trim()]
+      .filter(Boolean)
+      .join(", ");
     if (loc) lines.push(loc);
+
     if (languages.length) lines.push(`Languages: ${languages.join(", ")}`);
     if (availability) lines.push(`Availability: ${availability}`);
     if (licenseId.trim()) lines.push(`ID/License: ${licenseId.trim()}`);
@@ -387,6 +382,7 @@ export default function ResumeBuilderOnline() {
     fullName,
     email,
     mobile,
+    fullAddress,
     city,
     stateName,
     pincode,
@@ -440,6 +436,16 @@ export default function ResumeBuilderOnline() {
             </div>
 
             {/* Location */}
+            <h3 className="h3">Address</h3>
+            <label className="label">Full Address / Street Address (optional)</label>
+            <textarea
+              className="textarea"
+              rows={3}
+              value={fullAddress}
+              onChange={(e) => setFullAddress(e.target.value)}
+              placeholder="House/Flat No, Street, Area, Landmark"
+            />
+
             <h3 className="h3">Location</h3>
             <div className="row">
               <div className="col">
@@ -682,6 +688,7 @@ export default function ResumeBuilderOnline() {
           .h3{margin-top:16px;margin-bottom:0;font-size:13px;font-weight:950;color:#374151}
           .label{display:block;margin-top:12px;margin-bottom:6px;font-weight:900;font-size:13px}
           .input{width:100%;padding:11px;border-radius:12px;border:1px solid #d1d5db;outline:none;background:#fff}
+          .textarea{width:100%;padding:11px;border-radius:12px;border:1px solid #d1d5db;outline:none;background:#fff;resize:vertical}
           .hint{font-size:12px;color:#6b7280;margin-top:6px}
           .row{display:flex;gap:10px;flex-wrap:wrap}
           .col{flex:1;min-width:220px}

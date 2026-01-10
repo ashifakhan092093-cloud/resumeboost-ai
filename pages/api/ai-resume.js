@@ -7,73 +7,97 @@ export default function handler(req, res) {
     if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
     const b = req.body || {};
-    const fullName = (b.fullName || "").trim();
-    const email = (b.email || "").trim();
-    const mobile = (b.mobile || "").trim();
+    const fullName = clean(b.fullName);
+    const email = clean(b.email);
+    const mobile = clean(b.mobile);
 
     if (!fullName || !email || !mobile) {
       return res.status(400).json({ error: "Name/Email/Mobile required" });
     }
 
-    const title = (b.jobTitle || "Professional").trim();
+    const title = clean(b.jobTitle) || "Professional";
     const roleKey = pickRoleKey(title);
 
-    const education = `${b.qualification || "10th"} | Passout: ${b.passoutYear || ""}`;
+    const expType = b.expType === "Experienced" ? "Experienced" : "Fresher";
+
+    const companiesInput = Array.isArray(b.companies) ? b.companies : [];
+    const companies = expType === "Experienced"
+      ? companiesInput.map((c) => ({
+          companyName: clean(c?.companyName),
+          location: clean(c?.location), // ✅ FRONT uses "location"
+          startDate: clean(c?.startDate),
+          endDate: clean(c?.endDate),
+          teamSize: clean(c?.teamSize),
+        }))
+      : [];
+
+    const education = `${clean(b.qualification) || "10th"} | Passout: ${clean(b.passoutYear) || "-"}`;
 
     const skills = unique([
-      ...(Array.isArray(b.skillsSelected) ? b.skillsSelected : []),
+      ...(Array.isArray(b.skillsSelected) ? b.skillsSelected.map(clean) : []),
       ...getSkillSuggestions(title),
     ]).slice(0, 14);
 
     const certifications = unique([
-      ...(Array.isArray(b.certificationsSelected) ? b.certificationsSelected : []),
+      ...(Array.isArray(b.certificationsSelected) ? b.certificationsSelected.map(clean) : []),
       ...getCertSuggestions(roleKey),
     ]).slice(0, 10);
 
     const meta = {
-      city: (b.city || "").trim(),
-      state: (b.state || "").trim(),
-      pincode: (b.pincode || "").trim(),
-      languages: Array.isArray(b.languages) ? b.languages : [],
-      availability: (b.availability || "").trim(),
-      licenseId: (b.licenseId || "").trim(),
-      expType: b.expType || "Fresher",
-      companies: Array.isArray(b.companies) ? b.companies : [],
+      // ✅ Address fields
+      fullAddress: clean(b.fullAddress),
+      city: clean(b.city),
+      state: clean(b.state),
+      pincode: clean(b.pincode),
+
+      languages: Array.isArray(b.languages) ? b.languages.map(clean).filter(Boolean) : [],
+      availability: clean(b.availability),
+      licenseId: clean(b.licenseId),
+
+      expType,
+      companies,
     };
 
-    // ✅ Summary job-specific
-    const summary = buildSummary({ roleKey, title, expType: meta.expType });
+    const summary = buildSummary({ roleKey, title, expType });
 
-    // ✅ Experience highlights: always unique (seeded shuffle)
-    const seed = `${fullName}|${email}|${mobile}|${title}|${Date.now()}`;
+    // ✅ deterministic seed (same input => same points; no weird random repeats)
+    const seed = `${fullName}|${email}|${mobile}|${title}`;
+
     const experiencePoints = seededShuffle(unique(getHighlightsPool(roleKey)), seed).slice(0, 6);
 
-    // ✅ If Experienced: per company responsibilities (3–5 unique each)
     const companyResponsibilities =
-      meta.expType === "Experienced"
-        ? (meta.companies || []).map((c, idx) => {
-            const seed2 = `${seed}|company${idx}|${c.companyName || ""}|${c.startDate || ""}|${c.endDate || ""}`;
+      expType === "Experienced"
+        ? companies.map((c, idx) => {
+            const seed2 = `${seed}|company${idx}|${c.companyName}|${c.startDate}|${c.endDate}`;
             return {
-              companyName: (c.companyName || "").trim(),
-              location: (c.location || "").trim(),
-              startDate: c.startDate || "",
-              endDate: c.endDate || "",
-              teamSize: (c.teamSize || "").trim(),
+              companyName: c.companyName,
+              location: c.location,
+              startDate: c.startDate,
+              endDate: c.endDate,
+              teamSize: c.teamSize,
               points: seededShuffle(unique(getCompanyPointsPool(roleKey)), seed2).slice(0, 4),
             };
           })
         : [];
 
     return res.status(200).json({
+      // header
       fullName,
       email,
       mobile,
       title,
+      jobTitle: title,
+
+      // sections
       summary,
       education,
       skills,
       certifications,
+
+      // meta + experience
       meta,
+      expType,
+      companies,
       experiencePoints,
       companyResponsibilities,
     });
@@ -83,8 +107,8 @@ export default function handler(req, res) {
 }
 
 /** =========================
- *  Role mapping
- *  ========================= */
+ * Role mapping
+ * ========================= */
 
 function pickRoleKey(title) {
   const t = (title || "").toLowerCase();
@@ -151,11 +175,11 @@ function getCertSuggestions(roleKey) {
 function buildSummary({ roleKey, title, expType }) {
   const base = {
     security:
-      `Disciplined ${title} with strong focus on safety, access control, and incident reporting. ` +
+      `Disciplined ${title} focused on safety, access control, and incident reporting. ` +
       `Experienced in following SOPs, maintaining registers, and ensuring secure premises. ` +
-      `Seeking a stable role to deliver reliable security support and professional conduct.`,
+      `Seeking a role to deliver reliable security support and professional conduct.`,
     driver:
-      `Responsible ${title} with focus on safe driving, punctuality, and route planning. ` +
+      `Responsible ${title} focused on safe driving, punctuality, and route planning. ` +
       `Skilled in navigation, customer communication, and vehicle safety checks. ` +
       `Seeking an opportunity to deliver consistent performance and on-time service.`,
     delivery:
@@ -163,12 +187,12 @@ function buildSummary({ roleKey, title, expType }) {
       `Comfortable with navigation tools, COD handling, and delivery SOP compliance. ` +
       `Looking to contribute with disciplined execution and daily target completion.`,
     mechanic:
-      `Hands-on ${title} with strong troubleshooting and preventive maintenance approach. ` +
+      `Hands-on ${title} with a strong troubleshooting and preventive maintenance approach. ` +
       `Experienced in safe repair practices, diagnostics, and quality checks. ` +
       `Seeking an opportunity to reduce breakdowns and improve service turnaround.`,
     electrician:
       `Safety-focused ${title} skilled in wiring, fault finding, installation, and maintenance. ` +
-      `Experienced with tools/testing and quality inspection to minimize rework. ` +
+      `Experienced with tools/testing and inspection to minimize rework. ` +
       `Looking to support reliable electrical operations with discipline and accuracy.`,
     plumber:
       `Detail-oriented ${title} skilled in pipe fitting, leakage resolution, and installation work. ` +
@@ -176,7 +200,7 @@ function buildSummary({ roleKey, title, expType }) {
       `Seeking a role to deliver quality plumbing support and customer satisfaction.`,
     housekeeping:
       `Hardworking ${title} with strong hygiene standards and SOP-based cleaning practices. ` +
-      `Focused on safety, time management, and attention to detail in critical areas. ` +
+      `Focused on safety, time management, and attention to detail. ` +
       `Looking to maintain a clean, organized environment with consistent performance.`,
     sales:
       `Target-driven ${title} with strong communication, follow-ups, and customer handling skills. ` +
@@ -184,26 +208,24 @@ function buildSummary({ roleKey, title, expType }) {
       `Seeking an opportunity to grow revenue through consistent execution.`,
     office:
       `Organized ${title} skilled in documentation, reporting, and accuracy-driven data handling. ` +
-      `Comfortable with MS Excel, billing/support tasks, and professional communication. ` +
+      `Comfortable with MS Excel and back-office/billing tasks. ` +
       `Looking to contribute with reliability, structure, and timely delivery.`,
     generic:
       `Results-focused ${title} with disciplined work ethic and strong learning mindset. ` +
       `Known for reliability, teamwork, and consistent task completion. ` +
-      `Seeking an opportunity to contribute to growth with professional execution.`,
+      `Seeking an opportunity to contribute with professional execution.`,
   };
 
   let s = base[roleKey] || base.generic;
   if (expType === "Fresher") {
-    s =
-      s +
-      " Fresher-friendly profile with strong willingness to learn, follow instructions, and deliver quality output from day one.";
+    s += " Fresher-friendly profile with strong willingness to learn, follow instructions, and deliver quality output from day one.";
   }
   return s;
 }
 
 /** =========================
- *  Points pools
- *  ========================= */
+ * Points pools
+ * ========================= */
 
 function getHighlightsPool(roleKey) {
   const pools = {
@@ -220,7 +242,7 @@ function getHighlightsPool(roleKey) {
     driver: [
       "Ensured safe and timely transportation while following traffic rules and safety guidelines",
       "Planned routes efficiently to reduce delays and optimize daily schedules",
-      "Performed basic vehicle safety checks (fuel/tyres/brakes) to avoid breakdowns",
+      "Performed basic vehicle safety checks to avoid breakdowns",
       "Maintained professional communication with customers and stakeholders",
       "Managed logs/records responsibly and supported timely confirmations",
       "Maintained punctuality and consistently met daily targets",
@@ -245,7 +267,7 @@ function getHighlightsPool(roleKey) {
       "Documented job work and communicated updates professionally",
     ],
     electrician: [
-      "Installed and maintained electrical fittings with safety-first approach",
+      "Installed and maintained electrical fittings with a safety-first approach",
       "Identified faults using testing tools and resolved issues efficiently",
       "Followed wiring standards and ensured proper insulation and connections",
       "Maintained disciplined tool/material handling and worksite safety",
@@ -255,7 +277,7 @@ function getHighlightsPool(roleKey) {
     plumber: [
       "Installed and repaired pipelines and fittings with leak-proof finishing",
       "Diagnosed leakage/blockage issues and resolved them efficiently",
-      "Followed safety practices and maintained clean worksite after completion",
+      "Followed safety practices and maintained a clean worksite after completion",
       "Used tools responsibly and minimized material wastage",
       "Tested water flow/pressure and ensured quality checks before handover",
       "Communicated clearly with customers regarding work scope and timelines",
@@ -265,7 +287,7 @@ function getHighlightsPool(roleKey) {
       "Used cleaning materials safely and ensured proper storage after use",
       "Completed tasks on time by planning daily cleaning schedule efficiently",
       "Maintained attention to detail in high-touch and critical areas",
-      "Followed safety guidelines and ensured hazard-free environment",
+      "Followed safety guidelines and ensured a hazard-free environment",
       "Supported team coordination for large-area cleaning requirements",
     ],
     sales: [
@@ -297,20 +319,19 @@ function getHighlightsPool(roleKey) {
 }
 
 function getCompanyPointsPool(roleKey) {
-  // per-company responsibilities (3–5) different pool so it doesn't feel repeated
   const pools = {
     security: [
       "Managed entry/exit checks and ensured visitor verification as per policy",
       "Maintained daily registers and supported smooth shift handovers",
       "Performed patrolling rounds and reported suspicious activities promptly",
-      "Supported emergency readiness by following fire safety and incident protocols",
+      "Supported emergency readiness by following incident protocols",
       "Coordinated with staff to resolve issues and maintain site discipline",
-      "Ensured CCTV awareness and assisted in monitoring when required",
+      "Assisted in monitoring and escalation when required",
     ],
     driver: [
       "Maintained trip schedule with punctual start times and safe driving practices",
       "Performed pre-trip checks to ensure vehicle readiness and compliance",
-      "Used navigation tools to choose fastest routes and avoid delays",
+      "Used navigation tools to choose efficient routes and avoid delays",
       "Maintained basic trip records and provided timely status updates",
       "Handled customer communication politely and ensured smooth service",
       "Kept vehicle clean and supported basic upkeep routines",
@@ -342,7 +363,7 @@ function getCompanyPointsPool(roleKey) {
     plumber: [
       "Installed fittings/pipelines with clean finishing and leak prevention",
       "Diagnosed blockages/leaks and resolved with proper testing",
-      "Maintained safety practices and clean worksite after completion",
+      "Maintained safety practices and cleaned worksite after completion",
       "Ensured quality checks on water flow/pressure before handover",
       "Communicated work progress clearly and delivered timely completion",
       "Used tools safely and minimized material wastage",
@@ -384,11 +405,18 @@ function getCompanyPointsPool(roleKey) {
 }
 
 /** =========================
- *  Utils
- *  ========================= */
+ * Utils
+ * ========================= */
+
+function clean(v) {
+  return String(v ?? "")
+    .replace(/\u00A0/g, " ")     // NBSP -> space
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 function unique(arr) {
-  return [...new Set((arr || []).filter(Boolean))];
+  return [...new Set((arr || []).map(clean).filter(Boolean))];
 }
 
 function seededShuffle(arr, seedStr) {

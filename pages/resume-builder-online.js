@@ -7,115 +7,110 @@ const QUALIFICATIONS = [
   "12th",
   "ITI",
   "Diploma",
-  "Bachelor (UG)",
-  "Master (PG)",
-  "PhD",
+  "Graduation (UG)",
+  "Post Graduation (PG)",
 ];
 
-function yearOptions(start = 1980) {
+const years = (() => {
   const now = new Date().getFullYear();
-  const arr = [];
-  for (let y = now; y >= start; y--) arr.push(String(y));
-  return arr;
-}
+  return Array.from({ length: 50 }, (_, i) => String(now - i));
+})();
 
-// A–Z searchable list (common jobs) + user can still type custom if needed (optional)
+// ✅ Expanded small + common jobs (add more anytime)
 const JOB_TITLES = [
-  "Accountant",
-  "Administrative Assistant",
-  "Android Developer",
-  "Auto Mechanic",
-  "Backend Developer",
-  "Barber",
-  "Business Development Executive",
-  "Call Center Executive",
-  "Cashier",
-  "Civil Engineer",
-  "Content Writer",
-  "Customer Support Executive",
-  "Data Analyst",
+  // Small / local jobs
   "Delivery Driver",
-  "Digital Marketer",
-  "Electrician",
-  "Frontend Developer",
-  "Graphic Designer",
-  "HR Executive",
-  "Hotel Receptionist",
-  "Java Developer",
-  "Lab Technician",
-  "Machine Operator",
-  "Marketing Executive",
-  "Nurse",
+  "Driver",
+  "Auto Mechanic",
+  "Bike Mechanic",
+  "Car Mechanic",
+  "Helper",
   "Office Boy",
-  "Pharmacist",
-  "Plumber",
-  "Project Manager",
-  "Quality Analyst",
-  "Receptionist",
-  "Sales Executive",
+  "Peon",
+  "Cleaner",
+  "Housekeeping Staff",
   "Security Guard",
-  "SEO Executive",
-  "Store Manager",
-  "Teacher",
-  "UI/UX Designer",
-  "Video Editor",
+  "Watchman",
+  "Electrician",
+  "Plumber",
+  "Carpenter",
+  "Painter",
+  "Welder",
+  "Machine Operator",
+  "Warehouse Picker",
   "Warehouse Executive",
+  "Store Helper",
+  "Kitchen Helper",
+  "Cook",
+  "Chef",
+  "Waiter",
+  "Barber",
+  "Tailor",
+  "Receptionist",
+  "Data Entry Operator",
+  "Delivery Boy",
+  "Field Executive",
+  "Sales Executive",
+  "Telecaller",
+  "Customer Support Executive",
+
+  // Tech / business
+  "Accountant",
+  "Billing Executive",
+  "Back Office Executive",
+  "HR Executive",
+  "Marketing Executive",
+  "SEO Executive",
+  "Frontend Developer",
+  "Backend Developer",
+  "Full Stack Developer",
   "Web Developer",
-  "X-ray Technician",
-  "Yoga Instructor",
-  "Zonal Sales Manager",
 ];
 
-// Skills suggestions by role keyword
 const ROLE_SKILLS = [
-  { k: ["mechanic", "auto"], s: ["Diagnostics", "Vehicle Servicing", "Engine Repair", "Brakes & Suspension", "Tool Handling", "Safety Compliance"] },
-  { k: ["sales"], s: ["Lead Generation", "Negotiation", "Follow-ups", "CRM", "Closing", "Customer Handling"] },
+  { k: ["delivery", "driver", "courier"], s: ["Route Planning", "On-Time Delivery", "Customer Handling", "Cash Handling (COD)", "Vehicle Safety Check", "Navigation (Maps)"] },
+  { k: ["mechanic", "auto", "bike", "car mechanic"], s: ["Diagnostics", "Vehicle Servicing", "Engine Basics", "Brakes & Suspension", "Tool Handling", "Safety Compliance"] },
+  { k: ["electrician"], s: ["Wiring", "Safety Procedures", "Fault Finding", "Tools & Testing", "Installation", "Maintenance"] },
+  { k: ["plumber"], s: ["Pipe Fitting", "Leak Fixing", "Installation", "Maintenance", "Tools Handling", "Safety"] },
+  { k: ["security", "watchman"], s: ["Access Control", "Patrolling", "Incident Reporting", "Visitor Management", "Discipline", "Emergency Handling"] },
+  { k: ["cleaner", "housekeeping"], s: ["Cleaning SOP", "Hygiene", "Time Management", "Material Handling", "Safety", "Attention to Detail"] },
+  { k: ["sales"], s: ["Lead Generation", "Negotiation", "Follow-ups", "Closing", "Customer Handling", "Target Achievement"] },
+  { k: ["telecaller", "support", "customer"], s: ["Communication", "Ticket/Query Handling", "Follow-up", "Problem Solving", "Polite Conversation", "Escalation"] },
+  { k: ["account", "billing"], s: ["MS Excel", "Invoice/Billing", "Data Accuracy", "Reporting", "Reconciliation", "Documentation"] },
   { k: ["developer", "frontend", "backend", "web"], s: ["JavaScript", "HTML/CSS", "APIs", "Git", "Debugging", "Deployment"] },
-  { k: ["account", "billing", "invoice"], s: ["MS Excel", "Invoice Processing", "Reconciliation", "Reporting", "Data Accuracy", "Tally (optional)"] },
-  { k: ["support", "customer", "call"], s: ["Communication", "Ticket Handling", "Issue Tracking", "Escalation", "Follow-up", "Problem Solving"] },
-  { k: ["teacher"], s: ["Lesson Planning", "Classroom Management", "Student Assessment", "Communication", "Subject Knowledge", "Activity Coordination"] },
-  { k: ["designer", "ui", "ux", "graphic"], s: ["Figma", "Wireframing", "Typography", "Color Theory", "Design Systems", "Prototyping"] },
 ];
 
-function pickRoleSkills(jobTitle) {
+function pickSkills(jobTitle) {
   const t = (jobTitle || "").toLowerCase();
   for (const r of ROLE_SKILLS) {
     if (r.k.some((x) => t.includes(x))) return r.s;
   }
-  return ["Communication", "Teamwork", "Time Management", "Problem Solving", "MS Office / Digital Tools", "Quick Learning"];
+  return ["Communication", "Teamwork", "Time Management", "Problem Solving", "Work Discipline", "Quick Learning"];
 }
 
 export default function ResumeBuilderOnline() {
-  // Required
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [mobile, setMobile] = useState("");
 
-  // Education
   const [qualification, setQualification] = useState("10th");
-  const [passoutYear, setPassoutYear] = useState(String(new Date().getFullYear()));
+  const [passoutYear, setPassoutYear] = useState(years[0]);
 
-  // Experience
   const [expType, setExpType] = useState("Fresher"); // Fresher | Experienced
   const [companiesCount, setCompaniesCount] = useState(1);
-  const [companies, setCompanies] = useState([
-    { companyName: "", startDate: "", endDate: "" },
-  ]);
+  const [companies, setCompanies] = useState([{ companyName: "", startDate: "", endDate: "" }]);
 
-  // Job Title (search + select)
-  const [jobTitle, setJobTitle] = useState("");
-  const suggestedSkills = useMemo(() => pickRoleSkills(jobTitle), [jobTitle]);
+  const [jobTitle, setJobTitle] = useState("Delivery Driver");
 
-  // Skills select (multi)
+  const suggestedSkills = useMemo(() => pickSkills(jobTitle), [jobTitle]);
   const [selectedSkills, setSelectedSkills] = useState([]);
 
-  // Result from API (role-based 6 points non-repeat)
   const [ai, setAi] = useState(null);
   const [building, setBuilding] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   const requiredOk = fullName.trim() && email.trim() && mobile.trim();
 
-  // keep companies array length synced
   function setCompaniesByCount(n) {
     setCompaniesCount(n);
     setCompanies((prev) => {
@@ -133,7 +128,7 @@ export default function ResumeBuilderOnline() {
   }
 
   async function buildResume() {
-    if (!requiredOk) return alert("Name, Email, Mobile required.");
+    if (!requiredOk) return alert("Please fill Name, Email, Mobile.");
 
     try {
       setBuilding(true);
@@ -146,13 +141,10 @@ export default function ResumeBuilderOnline() {
           fullName: fullName.trim(),
           email: email.trim(),
           mobile: mobile.trim(),
-
           qualification,
           passoutYear,
-
           expType,
           companies: expType === "Experienced" ? companies : [],
-
           jobTitle: jobTitle.trim(),
           skillsSelected: selectedSkills,
         }),
@@ -168,11 +160,71 @@ export default function ResumeBuilderOnline() {
     }
   }
 
+  async function downloadPdf() {
+    if (!requiredOk) return alert("Please fill Name, Email, Mobile.");
+
+    try {
+      setDownloading(true);
+
+      // Ensure we have generated data
+      let payload = ai;
+      if (!payload) {
+        await buildResume();
+        // buildResume is async state; safer: call API fresh
+        const r2 = await fetch("/api/ai-resume", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fullName: fullName.trim(),
+            email: email.trim(),
+            mobile: mobile.trim(),
+            qualification,
+            passoutYear,
+            expType,
+            companies: expType === "Experienced" ? companies : [],
+            jobTitle: jobTitle.trim(),
+            skillsSelected: selectedSkills,
+          }),
+        });
+        payload = await r2.json();
+      }
+
+      const r = await fetch("/api/download-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload,
+          fileName: `${fullName.trim().replaceAll(" ", "_")}_Resume.pdf`,
+        }),
+      });
+
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err?.error || "PDF download failed");
+      }
+
+      const blob = await r.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${fullName.trim().replaceAll(" ", "_")}_Resume.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(e?.message || "Download error");
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   const preview = useMemo(() => {
     const sep = "----------------------------------------";
     const lines = [];
+
     lines.push(fullName.trim().toUpperCase());
-    lines.push(jobTitle ? jobTitle : "Professional Executive");
+    lines.push(jobTitle || "Professional Executive");
     lines.push([email.trim(), mobile.trim()].filter(Boolean).join(" | "));
     lines.push(sep);
 
@@ -181,8 +233,9 @@ export default function ResumeBuilderOnline() {
     lines.push("");
 
     lines.push("SKILLS");
-    const skillsText = (ai?.skills?.length ? ai.skills : selectedSkills).join(", ");
-    lines.push(skillsText || "—");
+    const skillsText =
+      (ai?.skills && ai.skills.length ? ai.skills : (selectedSkills.length ? selectedSkills : suggestedSkills)).join(", ");
+    lines.push(skillsText);
     lines.push("");
 
     lines.push("EXPERIENCE");
@@ -196,11 +249,12 @@ export default function ResumeBuilderOnline() {
     }
     lines.push("");
 
-    lines.push("ROLE-BASED POINTS");
+    // ✅ Heading rename
+    lines.push("PROFESSIONAL HIGHLIGHTS");
     (ai?.experiencePoints || []).forEach((p) => lines.push(`• ${p}`));
 
     return lines.join("\n");
-  }, [fullName, email, mobile, jobTitle, qualification, passoutYear, expType, companies, selectedSkills, ai]);
+  }, [fullName, email, mobile, jobTitle, qualification, passoutYear, expType, companies, selectedSkills, suggestedSkills, ai]);
 
   return (
     <>
@@ -212,30 +266,27 @@ export default function ResumeBuilderOnline() {
       <main className="page">
         <div className="topRow">
           <Link className="back" href="/">← Back</Link>
-          <span className="pill">Only Name+Email+Mobile required ✅</span>
+          <span className="pill">Only Name + Email + Mobile required ✅</span>
         </div>
 
         <h1 className="h1">AI Resume Builder Online</h1>
-        <p className="sub">
-          Job Title select karo → skills + points auto → minimum 6 unique points
-        </p>
+        <p className="sub">Job Title select karo → skills + points auto → PDF download</p>
 
         <div className="grid">
-          {/* FORM */}
           <section className="card">
             <h2 className="h2">Basic Details</h2>
 
             <label className="label">Full Name *</label>
-            <input className="input" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="e.g. Rahul Sharma" />
+            <input className="input" value={fullName} onChange={(e) => setFullName(e.target.value)} />
 
             <div className="row">
               <div className="col">
                 <label className="label">Email *</label>
-                <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="rahul@gmail.com" />
+                <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} />
               </div>
               <div className="col">
                 <label className="label">Mobile *</label>
-                <input className="input" value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="99999 99999" />
+                <input className="input" value={mobile} onChange={(e) => setMobile(e.target.value)} />
               </div>
             </div>
 
@@ -250,7 +301,7 @@ export default function ResumeBuilderOnline() {
               <div className="col">
                 <label className="label">Passout Year</label>
                 <select className="input" value={passoutYear} onChange={(e) => setPassoutYear(e.target.value)}>
-                  {yearOptions(1980).map((y) => <option key={y} value={y}>{y}</option>)}
+                  {years.map((y) => <option key={y} value={y}>{y}</option>)}
                 </select>
               </div>
             </div>
@@ -268,11 +319,7 @@ export default function ResumeBuilderOnline() {
               {expType === "Experienced" && (
                 <div className="col">
                   <label className="label">No. of Companies</label>
-                  <select
-                    className="input"
-                    value={companiesCount}
-                    onChange={(e) => setCompaniesByCount(parseInt(e.target.value, 10))}
-                  >
+                  <select className="input" value={companiesCount} onChange={(e) => setCompaniesByCount(parseInt(e.target.value, 10))}>
                     {[1, 2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{n}</option>)}
                   </select>
                 </div>
@@ -293,7 +340,6 @@ export default function ResumeBuilderOnline() {
                         const v = e.target.value;
                         setCompanies((prev) => prev.map((x, i) => (i === idx ? { ...x, companyName: v } : x)));
                       }}
-                      placeholder="e.g. Mahindra & Mahindra"
                     />
 
                     <div className="row">
@@ -328,7 +374,7 @@ export default function ResumeBuilderOnline() {
             )}
 
             <h3 className="h3">Job Title</h3>
-            <label className="label">Search & Select (A–Z)</label>
+            <label className="label">Search & Select</label>
             <input
               className="input"
               list="jobTitles"
@@ -339,7 +385,6 @@ export default function ResumeBuilderOnline() {
             <datalist id="jobTitles">
               {JOB_TITLES.map((t) => <option key={t} value={t} />)}
             </datalist>
-            <div className="hint">User typing avoid ho gaya — search karke select karega.</div>
 
             <h3 className="h3">Skills (auto suggestions)</h3>
             <div className="skillsGrid">
@@ -354,16 +399,17 @@ export default function ResumeBuilderOnline() {
                 </button>
               ))}
             </div>
-            <div className="hint">Select karo — points resume me use honge.</div>
 
             <div className="btnRow">
-              <button className="btn" disabled={!requiredOk || building} onClick={buildResume}>
+              <button className="btn blue" disabled={!requiredOk || building} onClick={buildResume}>
                 {building ? "Building..." : "Build Resume (Role Based)"}
+              </button>
+              <button className="btn green" disabled={!requiredOk || downloading} onClick={downloadPdf}>
+                {downloading ? "Generating..." : "Download PDF"}
               </button>
             </div>
           </section>
 
-          {/* PREVIEW */}
           <section className="card">
             <div className="previewTop">
               <h2 className="h2">Preview</h2>
@@ -389,16 +435,17 @@ export default function ResumeBuilderOnline() {
           .input{width:100%;padding:11px;border-radius:12px;border:1px solid #d1d5db;outline:none;background:#fff}
           .row{display:flex;gap:10px;flex-wrap:wrap}
           .col{flex:1;min-width:220px}
-          .hint{margin-top:6px;font-size:12px;color:#6b7280}
           .companyWrap{margin-top:10px;display:flex;flex-direction:column;gap:10px}
           .companyCard{border:1px solid #e5e7eb;border-radius:14px;padding:12px;background:#f9fafb}
           .companyTitle{font-weight:950;font-size:13px;color:#111827}
           .skillsGrid{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
           .skillBtn{border:1px solid #e5e7eb;background:#fff;border-radius:999px;padding:8px 12px;font-weight:800;font-size:12px;cursor:pointer}
           .skillOn{border-color:#16a34a;color:#16a34a}
-          .btnRow{margin-top:14px}
-          .btn{width:100%;padding:12px 14px;border-radius:12px;border:none;background:#0ea5e9;color:#fff;font-weight:950;cursor:pointer}
+          .btnRow{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+          .btn{flex:1;min-width:220px;padding:12px 14px;border-radius:12px;border:none;color:#fff;font-weight:950;cursor:pointer}
           .btn:disabled{opacity:.7;cursor:not-allowed}
+          .blue{background:#0ea5e9}
+          .green{background:#16a34a}
           .previewTop{display:flex;justify-content:space-between;align-items:center;gap:10px}
           .pillSmall{font-size:12px;font-weight:900;padding:6px 10px;border-radius:999px;border:1px solid #e5e7eb;background:#f9fafb}
           .preview{margin-top:12px;white-space:pre-wrap;border:1px solid #e5e7eb;border-radius:14px;padding:14px;font-size:13px;line-height:1.65;min-height:520px}

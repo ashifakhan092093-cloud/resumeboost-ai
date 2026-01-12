@@ -1,3 +1,5 @@
+// pages/api/download-pdf.js
+
 const PDFDocument = require("pdfkit");
 
 export const config = { api: { bodyParser: { sizeLimit: "2mb" } } };
@@ -24,134 +26,102 @@ export default function handler(req, res) {
     };
 
     const section = (title, body) => {
-      const text = clean(body);
-      if (!text) return;
-      ensureSpace(70);
+      if (!body) return;
+      ensureSpace(60);
       doc.font("Helvetica-Bold").fontSize(11).fillColor("#111").text(title);
       doc.moveDown(0.35);
-      doc.font("Helvetica").fontSize(10).fillColor("#111").text(text, { lineGap: 3 });
+      doc.font("Helvetica").fontSize(10).fillColor("#111").text(String(body), { lineGap: 3 });
       doc.moveDown(0.8);
     };
 
+    const fmtDate = (s) => {
+      if (!s) return "-";
+      const d = new Date(s);
+      if (Number.isNaN(d.getTime())) return s;
+      const dd = String(d.getDate()).padStart(2, "0");
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const yy = d.getFullYear();
+      return `${dd}-${mm}-${yy}`;
+    };
+
     // ===== HEADER =====
-    doc.font("Helvetica-Bold").fontSize(18).fillColor("#111").text(clean(payload.fullName).toUpperCase());
+    doc.font("Helvetica-Bold").fontSize(18).fillColor("#111").text(String(payload.fullName).toUpperCase());
     doc.moveDown(0.15);
-
-    doc.font("Helvetica").fontSize(12).fillColor("#111").text(clean(payload.title || payload.jobTitle || "Professional"));
-
-    // ✅ normal separator (no weird unicode => "%" issue avoid)
-    doc.font("Helvetica").fontSize(10).fillColor("#111").text(`${clean(payload.email)} | ${clean(payload.mobile)}`);
+    doc.font("Helvetica-Bold").fontSize(12).fillColor("#111").text(payload.title || "Professional");
+    doc.font("Helvetica").fontSize(10).fillColor("#111").text(`${payload.email}  |  ${payload.mobile}`);
 
     // Divider
     doc.moveDown(0.6);
     doc.moveTo(42, doc.y).lineTo(553, doc.y).strokeColor("#d1d5db").stroke();
     doc.moveDown(0.8);
 
-    // ===== LOCATION =====
+    // ===== ADDRESS / LOCATION (clean wrap + multi-line) =====
     const meta = payload.meta || {};
-    const locLine = [
-      clean(meta.fullAddress || payload.fullAddress),
-      clean(meta.city || payload.city),
-      clean(meta.state || payload.state),
-      (meta.pincode || payload.pincode) ? `PIN: ${clean(meta.pincode || payload.pincode)}` : "",
-    ]
-      .filter(Boolean)
-      .join(", ");
-    section("ADDRESS", locLine);
+    const addressLines = [
+      (meta.fullAddress || "").trim(),
+      [meta.city, meta.state].filter(Boolean).join(", "),
+      meta.pincode ? `PIN: ${meta.pincode}` : "",
+    ].filter(Boolean);
 
-    // ===== LANGUAGES / AVAILABILITY / LICENSE =====
-    const langs = Array.isArray(meta.languages) ? meta.languages : payload.languages;
-    if (Array.isArray(langs) && langs.length) section("LANGUAGES", langs.map(clean).filter(Boolean).join(", "));
-    section("AVAILABILITY", meta.availability || payload.availability);
-    section("ID / LICENSE", meta.licenseId || payload.licenseId);
+    if (addressLines.length) section("ADDRESS", addressLines.join("\n"));
+
+    // ===== LANGUAGES (kept, but only if present) =====
+    if (Array.isArray(meta.languages) && meta.languages.length) {
+      section("LANGUAGES", meta.languages.join(", "));
+    }
 
     // ===== EDUCATION =====
-    section("EDUCATION", payload.education || `${clean(payload.qualification || "-")} | Passout: ${clean(payload.passoutYear || "-")}`);
+    section("EDUCATION", payload.education || "-");
 
     // ===== SUMMARY =====
     section("PROFESSIONAL SUMMARY", payload.summary || "-");
 
     // ===== SKILLS =====
-    if (Array.isArray(payload.skills) && payload.skills.length) section("KEY SKILLS", payload.skills.map(clean).filter(Boolean).join(", "));
-
-    // ===== CERTIFICATIONS =====
-    if (Array.isArray(payload.certifications) && payload.certifications.length) {
-      section("CERTIFICATIONS", payload.certifications.map((x) => `• ${clean(x)}`).join("\n"));
+    if (Array.isArray(payload.skills) && payload.skills.length) {
+      section("KEY SKILLS", payload.skills.join(", "));
     }
 
-    // ===== EXPERIENCE =====
-    ensureSpace(50);
+    // ===== EXPERIENCE (companies + points) =====
+    ensureSpace(40);
     doc.font("Helvetica-Bold").fontSize(11).fillColor("#111").text("EXPERIENCE");
     doc.moveDown(0.35);
 
-    const expType = meta.expType || payload.expType || "Fresher";
+    const expType = meta.expType === "Experienced" ? "Experienced" : "Fresher";
+    const companyBlocks = Array.isArray(payload.companyResponsibilities) ? payload.companyResponsibilities : [];
 
-    // Prefer AI companyResponsibilities (best)
-    const companyBlocks = Array.isArray(payload.companyResponsibilities) ? payload.companyResponsibilities : null;
+    if (expType === "Experienced" && companyBlocks.length) {
+      companyBlocks.forEach((c, idx) => {
+        ensureSpace(160);
 
-    if (expType === "Experienced") {
-      const list =
-        companyBlocks && companyBlocks.length
-          ? companyBlocks
-          : (Array.isArray(meta.companies) ? meta.companies : Array.isArray(payload.companies) ? payload.companies : []);
+        const name = c.companyName ? c.companyName : `Company ${idx + 1}`;
+        const loc = c.location ? ` | ${c.location}` : "";
+        const dur = `Duration: ${fmtDate(c.startDate)} to ${fmtDate(c.endDate)}`;
 
-      if (list.length) {
-        list.forEach((c, idx) => {
-          ensureSpace(170);
+        doc.font("Helvetica-Bold").fontSize(10).fillColor("#111").text(`${name}${loc}`);
+        doc.font("Helvetica").fontSize(10).fillColor("#111").text(dur);
+        doc.moveDown(0.25);
 
-          const name = clean(c.companyName) || `Company ${idx + 1}`;
-          const loc = clean(c.location) ? ` | ${clean(c.location)}` : ""; // ✅ FIX (location)
-          const dur = `Duration: ${fmt(c.startDate)} to ${fmt(c.endDate)}`;
-          const team = clean(c.teamSize) ? `Supervisor/Team: ${clean(c.teamSize)}` : "";
-
-          doc.font("Helvetica-Bold").fontSize(10).fillColor("#111").text(`${name}${loc}`);
-          doc.font("Helvetica").fontSize(10).fillColor("#111").text(dur);
-          if (team) doc.text(team);
-          doc.moveDown(0.25);
-
-          const pts = Array.isArray(c.points) ? c.points : [];
-          pts.slice(0, 6).forEach((p) => {
-            ensureSpace(26);
-            doc.text(`• ${clean(p)}`, { lineGap: 2 });
-          });
-
-          doc.moveDown(0.6);
+        const pts = Array.isArray(c.points) ? c.points : [];
+        pts.slice(0, 6).forEach((p) => {
+          ensureSpace(24);
+          doc.text(`• ${p}`, { lineGap: 2 });
         });
-      } else {
-        doc.font("Helvetica").fontSize(10).fillColor("#111").text("Experienced (details not provided)");
+
         doc.moveDown(0.6);
-      }
+      });
     } else {
       doc.font("Helvetica").fontSize(10).fillColor("#111").text("Fresher");
       doc.moveDown(0.6);
     }
 
-    // ===== HIGHLIGHTS =====
+    // ===== HIGHLIGHTS (Unique, non-overlap) =====
     const highlights = Array.isArray(payload.experiencePoints) ? payload.experiencePoints : [];
     if (highlights.length) {
-      section("PROFESSIONAL EXPERIENCE HIGHLIGHTS", highlights.map((p) => `• ${clean(p)}`).join("\n"));
+      section("PROFESSIONAL HIGHLIGHTS", highlights.map((p) => `• ${p}`).join("\n"));
     }
 
     doc.end();
   } catch (e) {
     return res.status(500).json({ error: e?.message || "PDF error" });
   }
-}
-
-function clean(v) {
-  return String(v ?? "")
-    .replace(/\u00A0/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function fmt(d) {
-  const s = clean(d);
-  if (!s) return "-";
-  const x = new Date(s);
-  if (Number.isNaN(x.getTime())) return s;
-  const dd = String(x.getDate()).padStart(2, "0");
-  const mm = String(x.getMonth() + 1).padStart(2, "0");
-  const yy = x.getFullYear();
-  return `${dd}-${mm}-${yy}`;
 }

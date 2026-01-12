@@ -1,3 +1,5 @@
+// pages/api/ai-resume.js
+
 export const config = {
   api: { bodyParser: { sizeLimit: "2mb" } },
 };
@@ -7,97 +9,98 @@ export default function handler(req, res) {
     if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
     const b = req.body || {};
-    const fullName = clean(b.fullName);
-    const email = clean(b.email);
-    const mobile = clean(b.mobile);
+    const fullName = String(b.fullName || "").trim();
+    const email = String(b.email || "").trim();
+    const mobile = String(b.mobile || "").trim();
 
     if (!fullName || !email || !mobile) {
       return res.status(400).json({ error: "Name/Email/Mobile required" });
     }
 
-    const title = clean(b.jobTitle) || "Professional";
-    const roleKey = pickRoleKey(title);
+    const jobTitle = String(b.jobTitle || "Professional").trim();
+    const roleKey = pickRoleKey(jobTitle);
 
+    // ✅ Education
+    const qualification = String(b.qualification || "10th").trim();
+    const passoutYear = String(b.passoutYear || "").trim();
+    const education = passoutYear ? `${qualification} | Passout: ${passoutYear}` : qualification;
+
+    // ✅ Address / Location (FULL street allowed)
+    const fullAddress = String(b.fullAddress || "").trim();
+    const city = String(b.city || "").trim();
+    const state = String(b.state || "").trim();
+    const pincode = String(b.pincode || "").trim();
+
+    // ✅ Languages
+    const languages = Array.isArray(b.languages) ? b.languages.map(String).map((x) => x.trim()).filter(Boolean) : [];
+
+    // ✅ Experience
     const expType = b.expType === "Experienced" ? "Experienced" : "Fresher";
+    const companiesIn = Array.isArray(b.companies) ? b.companies : [];
 
-    const companiesInput = Array.isArray(b.companies) ? b.companies : [];
-    const companies = expType === "Experienced"
-      ? companiesInput.map((c) => ({
-          companyName: clean(c?.companyName),
-          location: clean(c?.location), // ✅ FRONT uses "location"
-          startDate: clean(c?.startDate),
-          endDate: clean(c?.endDate),
-          teamSize: clean(c?.teamSize),
-        }))
+    // ✅ Role-safe skills (NO cross-role contamination)
+    const suggestedSkills = getRoleSkills(jobTitle);
+    const selectedSkills = Array.isArray(b.skillsSelected)
+      ? b.skillsSelected.map(String).map((x) => x.trim()).filter(Boolean)
       : [];
 
-    const education = `${clean(b.qualification) || "10th"} | Passout: ${clean(b.passoutYear) || "-"}`;
+    // Only keep selected skills that match suggested skills (role-safe)
+    const safeSelected = selectedSkills.filter((s) => suggestedSkills.includes(s));
+    const skills = unique([...safeSelected, ...suggestedSkills]).slice(0, 14);
 
-    const skills = unique([
-      ...(Array.isArray(b.skillsSelected) ? b.skillsSelected.map(clean) : []),
-      ...getSkillSuggestions(title),
-    ]).slice(0, 14);
+    // ✅ Summary (job specific)
+    const summary = buildSummary({ roleKey, title: jobTitle, expType });
 
-    const certifications = unique([
-      ...(Array.isArray(b.certificationsSelected) ? b.certificationsSelected.map(clean) : []),
-      ...getCertSuggestions(roleKey),
-    ]).slice(0, 10);
+    // ✅ Unique points (no repetition)
+    const seedBase = `${fullName}|${email}|${mobile}|${jobTitle}|${Date.now()}`;
 
-    const meta = {
-      // ✅ Address fields
-      fullAddress: clean(b.fullAddress),
-      city: clean(b.city),
-      state: clean(b.state),
-      pincode: clean(b.pincode),
+    // Highlights pool is different from company pool
+    const highlightsPool = unique(getHighlightsPool(roleKey));
+    const experiencePoints = seededShuffle(highlightsPool, seedBase).slice(0, 6);
 
-      languages: Array.isArray(b.languages) ? b.languages.map(clean).filter(Boolean) : [],
-      availability: clean(b.availability),
-      licenseId: clean(b.licenseId),
-
-      expType,
-      companies,
-    };
-
-    const summary = buildSummary({ roleKey, title, expType });
-
-    // ✅ deterministic seed (same input => same points; no weird random repeats)
-    const seed = `${fullName}|${email}|${mobile}|${title}`;
-
-    const experiencePoints = seededShuffle(unique(getHighlightsPool(roleKey)), seed).slice(0, 6);
-
+    // Company responsibilities (only if Experienced)
     const companyResponsibilities =
       expType === "Experienced"
-        ? companies.map((c, idx) => {
-            const seed2 = `${seed}|company${idx}|${c.companyName}|${c.startDate}|${c.endDate}`;
-            return {
-              companyName: c.companyName,
-              location: c.location,
-              startDate: c.startDate,
-              endDate: c.endDate,
-              teamSize: c.teamSize,
-              points: seededShuffle(unique(getCompanyPointsPool(roleKey)), seed2).slice(0, 4),
-            };
-          })
+        ? companiesIn
+            .slice(0, 6)
+            .map((c, idx) => {
+              const companyName = String(c?.companyName || "").trim();
+              const location = String(c?.location || "").trim();
+              const startDate = String(c?.startDate || "").trim();
+              const endDate = String(c?.endDate || "").trim();
+
+              const seed2 = `${seedBase}|company${idx}|${companyName}|${startDate}|${endDate}`;
+              const pool = unique(getCompanyPointsPool(roleKey));
+
+              // avoid overlap with highlights (extra safety)
+              const poolNoOverlap = pool.filter((p) => !experiencePoints.includes(p));
+
+              return {
+                companyName,
+                location,
+                startDate,
+                endDate,
+                points: seededShuffle(poolNoOverlap, seed2).slice(0, 5), // 5 strong points
+              };
+            })
         : [];
 
     return res.status(200).json({
-      // header
       fullName,
       email,
       mobile,
-      title,
-      jobTitle: title,
-
-      // sections
+      title: jobTitle,
       summary,
       education,
       skills,
-      certifications,
-
-      // meta + experience
-      meta,
-      expType,
-      companies,
+      meta: {
+        fullAddress,
+        city,
+        state,
+        pincode,
+        languages,
+        expType,
+      },
       experiencePoints,
       companyResponsibilities,
     });
@@ -106,12 +109,22 @@ export default function handler(req, res) {
   }
 }
 
-/** =========================
- * Role mapping
- * ========================= */
+/* =========================
+   ROLE + SKILLS (STRICT)
+   ========================= */
 
 function pickRoleKey(title) {
   const t = (title || "").toLowerCase();
+
+  // Tech
+  if (t.includes("frontend") || t.includes("backend") || t.includes("full stack") || t.includes("developer")) return "tech";
+  if (t.includes("seo") || t.includes("digital marketing") || t.includes("marketing")) return "marketing";
+
+  // Sales / Support / Office
+  if (t.includes("sales") || t.includes("telecaller") || t.includes("call center") || t.includes("customer support")) return "sales";
+  if (t.includes("data entry") || t.includes("back office") || t.includes("billing") || t.includes("account") || t.includes("receptionist")) return "office";
+
+  // Blue collar
   if (t.includes("security") || t.includes("watchman") || t.includes("bouncer")) return "security";
   if (t.includes("delivery")) return "delivery";
   if (t.includes("driver") || t.includes("courier") || t.includes("rider")) return "driver";
@@ -119,281 +132,396 @@ function pickRoleKey(title) {
   if (t.includes("electrician")) return "electrician";
   if (t.includes("plumber")) return "plumber";
   if (t.includes("housekeeping") || t.includes("cleaner")) return "housekeeping";
-  if (t.includes("sales") || t.includes("telecaller") || t.includes("call center")) return "sales";
-  if (t.includes("data entry") || t.includes("back office") || t.includes("billing") || t.includes("account")) return "office";
+
   return "generic";
 }
 
-function getSkillSuggestions(jobTitle) {
-  const t = (jobTitle || "").toLowerCase();
-  if (t.includes("security") || t.includes("watchman") || t.includes("bouncer")) {
-    return ["Access Control", "Patrolling", "Incident Reporting", "Visitor Management", "Emergency Handling", "Discipline"];
-  }
-  if (t.includes("delivery")) {
-    return ["On-Time Delivery", "Route Planning", "Navigation (Maps)", "Customer Handling", "Order Verification", "Cash Handling (COD)"];
-  }
-  if (t.includes("driver") || t.includes("courier") || t.includes("rider")) {
-    return ["Safe Driving", "Route Planning", "Navigation (Maps)", "Vehicle Safety Checks", "Time Management", "Customer Handling"];
-  }
-  if (t.includes("mechanic")) {
-    return ["Diagnostics", "Vehicle Servicing", "Brakes & Suspension", "Tool Handling", "Safety Compliance", "Quality Checks"];
-  }
-  if (t.includes("electrician")) {
-    return ["Wiring", "Fault Finding", "Tools & Testing", "Installation", "Maintenance", "Safety Procedures"];
-  }
-  if (t.includes("plumber")) {
-    return ["Pipe Fitting", "Leak Fixing", "Installation", "Maintenance", "Tools Handling", "Safety"];
-  }
-  if (t.includes("housekeeping") || t.includes("cleaner")) {
-    return ["Cleaning SOP", "Hygiene", "Material Handling", "Time Management", "Safety", "Attention to Detail"];
-  }
-  if (t.includes("sales") || t.includes("telecaller") || t.includes("call center")) {
-    return ["Lead Generation", "Follow-ups", "Negotiation", "Communication", "Customer Handling", "Target Achievement"];
-  }
-  if (t.includes("data entry") || t.includes("back office") || t.includes("billing") || t.includes("account")) {
-    return ["MS Excel", "Data Accuracy", "Documentation", "Reporting", "Invoice/Billing", "Communication"];
-  }
-  return ["Communication", "Teamwork", "Time Management", "Problem Solving", "Work Discipline", "Quick Learning"];
+// ✅ Strict skills generator: exact role → role skills (no mixing)
+function getRoleSkills(jobTitle) {
+  const roleKey = pickRoleKey(jobTitle);
+
+  const map = {
+    sales: [
+      "Lead Generation",
+      "Customer Handling",
+      "Follow-ups",
+      "Negotiation",
+      "Target Achievement",
+      "Relationship Building",
+      "Pipeline Management",
+      "Communication",
+    ],
+    office: [
+      "MS Excel",
+      "Data Accuracy",
+      "Documentation",
+      "Reporting",
+      "Invoice/Billing",
+      "Email & Coordination",
+      "Record Management",
+      "Communication",
+    ],
+    security: [
+      "Access Control",
+      "Patrolling",
+      "Incident Reporting",
+      "Visitor Management",
+      "Emergency Handling",
+      "Discipline",
+      "Observation Skills",
+      "Night Duty Readiness",
+    ],
+    driver: [
+      "Safe Driving",
+      "Route Planning",
+      "Navigation (Maps)",
+      "Vehicle Safety Checks",
+      "Time Management",
+      "Customer Coordination",
+      "Trip Logs",
+      "Punctuality",
+    ],
+    delivery: [
+      "On-Time Delivery",
+      "Route Planning",
+      "Navigation (Maps)",
+      "Order Verification",
+      "Customer Communication",
+      "COD Handling",
+      "Area Knowledge",
+      "Daily Targets",
+    ],
+    mechanic: [
+      "Vehicle Diagnostics",
+      "Servicing & Repair",
+      "Tool Handling",
+      "Safety Compliance",
+      "Quality Checks",
+      "Problem Solving",
+      "Preventive Maintenance",
+      "Workshop Discipline",
+    ],
+    electrician: [
+      "Wiring",
+      "Fault Finding",
+      "Installation",
+      "Maintenance",
+      "Tools & Testing",
+      "Safety Procedures",
+      "Load Checking",
+      "Earthing & Protection",
+    ],
+    plumber: [
+      "Pipe Fitting",
+      "Leak Fixing",
+      "Installation",
+      "Maintenance",
+      "Tools Handling",
+      "Safety",
+      "Blockage Removal",
+      "Testing & Finishing",
+    ],
+    housekeeping: [
+      "Cleaning SOP",
+      "Hygiene",
+      "Material Handling",
+      "Time Management",
+      "Safety",
+      "Attention to Detail",
+      "Waste Handling",
+      "Surface Sanitization",
+    ],
+    tech: [
+      "HTML/CSS",
+      "JavaScript",
+      "React/Next.js",
+      "API Integration",
+      "Debugging",
+      "Git",
+      "Responsive UI",
+      "Problem Solving",
+    ],
+    marketing: [
+      "SEO Basics",
+      "Social Media",
+      "Content Writing",
+      "Campaign Support",
+      "Analytics Basics",
+      "Lead Handling",
+      "Communication",
+      "Reporting",
+    ],
+    generic: ["Communication", "Teamwork", "Time Management", "Work Discipline", "Problem Solving", "Reliability"],
+  };
+
+  // Return only from role bucket (no merge)
+  const arr = map[roleKey] || map.generic;
+  return unique(arr).slice(0, 10);
 }
 
-function getCertSuggestions(roleKey) {
-  const map = {
-    security: ["CCTV Training", "Fire Safety", "First Aid", "Security Guard Training"],
-    driver: ["Driving License", "Road Safety Training", "First Aid"],
-    delivery: ["Road Safety Training", "GPS/Maps Training", "First Aid"],
-    mechanic: ["ITI Certificate", "Safety Training", "Tool Handling Training"],
-    electrician: ["Safety Training", "Wiring & Installation Certificate"],
-    plumber: ["Safety Training", "Plumbing Certificate"],
-    housekeeping: ["Hygiene Training", "Housekeeping SOP Training"],
-    sales: ["Sales Training", "Customer Handling Training"],
-    office: ["MS Office Certificate", "Communication Training"],
-    generic: [],
-  };
-  return map[roleKey] || [];
-}
+/* =========================
+   SUMMARY + POINTS
+   ========================= */
 
 function buildSummary({ roleKey, title, expType }) {
   const base = {
-    security:
-      `Disciplined ${title} focused on safety, access control, and incident reporting. ` +
-      `Experienced in following SOPs, maintaining registers, and ensuring secure premises. ` +
-      `Seeking a role to deliver reliable security support and professional conduct.`,
-    driver:
-      `Responsible ${title} focused on safe driving, punctuality, and route planning. ` +
-      `Skilled in navigation, customer communication, and vehicle safety checks. ` +
-      `Seeking an opportunity to deliver consistent performance and on-time service.`,
-    delivery:
-      `Reliable ${title} focused on on-time deliveries, order verification, and customer satisfaction. ` +
-      `Comfortable with navigation tools, COD handling, and delivery SOP compliance. ` +
-      `Looking to contribute with disciplined execution and daily target completion.`,
-    mechanic:
-      `Hands-on ${title} with a strong troubleshooting and preventive maintenance approach. ` +
-      `Experienced in safe repair practices, diagnostics, and quality checks. ` +
-      `Seeking an opportunity to reduce breakdowns and improve service turnaround.`,
-    electrician:
-      `Safety-focused ${title} skilled in wiring, fault finding, installation, and maintenance. ` +
-      `Experienced with tools/testing and inspection to minimize rework. ` +
-      `Looking to support reliable electrical operations with discipline and accuracy.`,
-    plumber:
-      `Detail-oriented ${title} skilled in pipe fitting, leakage resolution, and installation work. ` +
-      `Strong focus on safety, clean finishing, and timely completion. ` +
-      `Seeking a role to deliver quality plumbing support and customer satisfaction.`,
-    housekeeping:
-      `Hardworking ${title} with strong hygiene standards and SOP-based cleaning practices. ` +
-      `Focused on safety, time management, and attention to detail. ` +
-      `Looking to maintain a clean, organized environment with consistent performance.`,
     sales:
       `Target-driven ${title} with strong communication, follow-ups, and customer handling skills. ` +
       `Experienced in lead generation, negotiation, and disciplined pipeline management. ` +
       `Seeking an opportunity to grow revenue through consistent execution.`,
     office:
       `Organized ${title} skilled in documentation, reporting, and accuracy-driven data handling. ` +
-      `Comfortable with MS Excel and back-office/billing tasks. ` +
-      `Looking to contribute with reliability, structure, and timely delivery.`,
+      `Comfortable with MS Excel and coordination tasks with strong attention to detail. ` +
+      `Looking to contribute with reliability and timely delivery.`,
+    security:
+      `Disciplined ${title} with strong focus on safety, access control, and incident reporting. ` +
+      `Experienced in SOP compliance, patrolling routines, and maintaining registers. ` +
+      `Seeking a stable role to deliver reliable security support.`,
+    driver:
+      `Responsible ${title} focused on safe driving, punctuality, and route planning. ` +
+      `Skilled in navigation and vehicle safety checks to ensure smooth trips. ` +
+      `Seeking an opportunity to deliver consistent on-time service.`,
+    delivery:
+      `Reliable ${title} focused on on-time deliveries, order verification, and customer satisfaction. ` +
+      `Comfortable with navigation tools and delivery discipline to meet daily targets. ` +
+      `Looking to contribute with consistent performance.`,
+    mechanic:
+      `Hands-on ${title} with strong troubleshooting and preventive maintenance approach. ` +
+      `Experienced in safe repair practices and quality checks to reduce rework. ` +
+      `Seeking an opportunity to improve service turnaround.`,
+    electrician:
+      `Safety-focused ${title} skilled in wiring, fault finding, installation, and maintenance. ` +
+      `Experienced with tools/testing and careful inspection to minimize breakdowns. ` +
+      `Looking to support reliable electrical operations.`,
+    plumber:
+      `Detail-oriented ${title} skilled in pipe fitting, leakage resolution, and installation work. ` +
+      `Strong focus on clean finishing, safety, and timely completion. ` +
+      `Seeking a role to deliver quality plumbing support.`,
+    housekeeping:
+      `Hardworking ${title} with strong hygiene standards and SOP-based cleaning practices. ` +
+      `Focused on safety, time management, and attention to detail in critical areas. ` +
+      `Looking to maintain a clean, organized environment.`,
+    tech:
+      `Results-driven ${title} with strong problem-solving and clean code practices. ` +
+      `Comfortable with modern web development workflows and collaboration. ` +
+      `Seeking an opportunity to build reliable products with quality.`,
+    marketing:
+      `Detail-oriented ${title} with interest in performance-driven marketing and content execution. ` +
+      `Comfortable with reporting, coordination, and campaign support tasks. ` +
+      `Seeking to contribute with consistency and learning mindset.`,
     generic:
       `Results-focused ${title} with disciplined work ethic and strong learning mindset. ` +
       `Known for reliability, teamwork, and consistent task completion. ` +
-      `Seeking an opportunity to contribute with professional execution.`,
+      `Seeking an opportunity to contribute to growth with professional execution.`,
   };
 
   let s = base[roleKey] || base.generic;
+
   if (expType === "Fresher") {
-    s += " Fresher-friendly profile with strong willingness to learn, follow instructions, and deliver quality output from day one.";
+    s += " Fresher-friendly profile with strong willingness to learn and deliver quality output from day one.";
   }
   return s;
 }
 
-/** =========================
- * Points pools
- * ========================= */
-
 function getHighlightsPool(roleKey) {
   const pools = {
+    sales: [
+      "Achieved daily and monthly targets through disciplined follow-ups and planning",
+      "Improved conversions by handling objections confidently and clearly",
+      "Maintained accurate pipeline updates for better forecast visibility",
+      "Strengthened customer relationships to increase repeat business",
+      "Generated quality leads using structured outreach and referral methods",
+      "Ensured professional communication and product pitching consistency",
+      "Coordinated with teams for smooth documentation and quick closures",
+      "Focused on customer satisfaction and timely resolution of queries",
+    ],
+    office: [
+      "Maintained accurate documentation and records with strong attention to detail",
+      "Prepared reports and ensured timely updates to stakeholders",
+      "Supported billing/back-office workflow with disciplined coordination",
+      "Improved efficiency by organizing tasks and prioritizing deadlines",
+      "Ensured data accuracy to minimize errors and rework",
+      "Handled communication and follow-ups professionally",
+      "Managed files and registers to keep operations smooth",
+    ],
     security: [
-      "Maintained access control and verified entries to ensure premises security",
-      "Performed regular patrolling and reported incidents with alertness and discipline",
-      "Handled visitor management and maintained accurate log registers",
-      "Followed SOPs for emergencies and coordinated with relevant staff",
-      "Ensured rule compliance and professional behavior throughout duty hours",
-      "Prevented unauthorized activities through strong observation and vigilance",
-      "Maintained clear reporting and supported smooth shift handovers",
-      "Improved safety by identifying risks and escalating issues promptly",
+      "Maintained access control and verified entries as per policy",
+      "Performed patrolling rounds and reported incidents promptly",
+      "Handled visitor management and maintained accurate registers",
+      "Followed SOPs for emergencies and coordinated with staff",
+      "Ensured discipline and compliance during duty hours",
+      "Supported smooth shift handovers with clear reporting",
     ],
     driver: [
-      "Ensured safe and timely transportation while following traffic rules and safety guidelines",
-      "Planned routes efficiently to reduce delays and optimize daily schedules",
-      "Performed basic vehicle safety checks to avoid breakdowns",
-      "Maintained professional communication with customers and stakeholders",
-      "Managed logs/records responsibly and supported timely confirmations",
-      "Maintained punctuality and consistently met daily targets",
-      "Handled vehicle cleanliness and ensured readiness for trips",
+      "Ensured safe and timely transportation while following traffic rules",
+      "Planned routes efficiently to reduce delays and optimize schedules",
+      "Performed basic vehicle checks to avoid breakdowns",
+      "Maintained punctuality and consistently met daily commitments",
+      "Handled customer coordination politely and professionally",
+      "Maintained trip records and provided timely status updates",
     ],
     delivery: [
-      "Delivered orders on time by planning routes efficiently and minimizing delays",
-      "Verified items and ensured correct handover while following delivery SOPs",
-      "Used navigation tools effectively and maintained strong area knowledge",
-      "Handled COD responsibly and maintained basic delivery records",
-      "Communicated clearly with customers for address confirmation and smooth delivery",
-      "Maintained disciplined schedule and completed daily targets consistently",
-      "Ensured courteous behavior and improved customer satisfaction",
+      "Delivered orders on time by planning routes efficiently",
+      "Verified items and ensured correct handover as per SOP",
+      "Handled COD responsibly and maintained delivery discipline",
+      "Communicated clearly with customers for smooth delivery",
+      "Completed daily targets with consistent punctuality",
+      "Used navigation tools effectively and maintained area knowledge",
     ],
     mechanic: [
-      "Performed preventive maintenance and routine servicing to ensure vehicle safety",
-      "Diagnosed issues using systematic inspection and troubleshooting approach",
-      "Executed repair work while following safety and quality standards",
-      "Maintained tools/spares and workshop discipline for smooth operations",
-      "Conducted final checks and ensured vehicle readiness before delivery",
-      "Improved turnaround time by prioritizing urgent jobs and workflow planning",
-      "Documented job work and communicated updates professionally",
+      "Diagnosed issues using systematic troubleshooting approach",
+      "Performed servicing and repairs with safety and quality focus",
+      "Conducted final checks to ensure readiness before handover",
+      "Maintained tool discipline and clean workshop practices",
+      "Improved turnaround time by prioritizing urgent jobs",
+      "Reduced repeat issues with careful inspection and testing",
     ],
     electrician: [
-      "Installed and maintained electrical fittings with a safety-first approach",
-      "Identified faults using testing tools and resolved issues efficiently",
-      "Followed wiring standards and ensured proper insulation and connections",
-      "Maintained disciplined tool/material handling and worksite safety",
-      "Performed quality checks and minimized rework through careful inspection",
-      "Prepared basic documentation and provided clear work updates",
+      "Installed and maintained fittings with safety-first approach",
+      "Identified faults using testing tools and resolved efficiently",
+      "Followed wiring standards to ensure proper insulation",
+      "Performed quality checks to minimize rework",
+      "Maintained disciplined tool and material handling",
+      "Ensured safe worksite practices and proper finishing",
     ],
     plumber: [
-      "Installed and repaired pipelines and fittings with leak-proof finishing",
-      "Diagnosed leakage/blockage issues and resolved them efficiently",
-      "Followed safety practices and maintained a clean worksite after completion",
-      "Used tools responsibly and minimized material wastage",
-      "Tested water flow/pressure and ensured quality checks before handover",
-      "Communicated clearly with customers regarding work scope and timelines",
+      "Installed and repaired pipelines with leak-proof finishing",
+      "Resolved leakage and blockage issues with proper testing",
+      "Maintained clean worksite and safety compliance",
+      "Ensured quality checks on water flow and pressure",
+      "Delivered timely completion with clear communication",
+      "Minimized wastage through disciplined material usage",
     ],
     housekeeping: [
       "Maintained cleanliness as per SOP with strong hygiene standards",
-      "Used cleaning materials safely and ensured proper storage after use",
-      "Completed tasks on time by planning daily cleaning schedule efficiently",
-      "Maintained attention to detail in high-touch and critical areas",
-      "Followed safety guidelines and ensured a hazard-free environment",
-      "Supported team coordination for large-area cleaning requirements",
+      "Completed tasks on time by planning daily cleaning routines",
+      "Maintained attention to detail in high-touch areas",
+      "Followed safety guidelines to ensure hazard-free environment",
+      "Used materials safely and ensured proper storage after use",
+      "Supported team coordination for deep cleaning tasks",
     ],
-    sales: [
-      "Generated and qualified leads consistently to build a strong pipeline",
-      "Maintained structured follow-ups to improve conversions and closure rates",
-      "Handled objections professionally and communicated product value clearly",
-      "Worked towards targets with daily planning and disciplined execution",
-      "Maintained customer relationships to increase repeat and referral business",
-      "Updated records and ensured pipeline visibility with accountability",
+    tech: [
+      "Built responsive UI with clean components and reusable patterns",
+      "Integrated APIs and handled edge cases with stable error handling",
+      "Improved performance through optimized rendering and code structure",
+      "Collaborated using Git workflows and code review discipline",
+      "Debugged issues and delivered reliable fixes on time",
+      "Maintained clean structure and readable code conventions",
     ],
-    office: [
-      "Maintained accurate records and documentation with strong attention to detail",
-      "Prepared reports and supported billing/back-office operations reliably",
-      "Ensured data accuracy and timely updates to stakeholders",
-      "Managed files, follow-ups, and daily coordination professionally",
-      "Improved efficiency by organizing workflow and prioritizing tasks",
-      "Maintained professional communication and consistent quality output",
+    marketing: [
+      "Supported campaign execution with consistent daily follow-ups",
+      "Improved reporting and tracking accuracy for better visibility",
+      "Assisted in content and posting schedules with discipline",
+      "Handled lead coordination and basic qualification steps",
+      "Maintained communication and timely updates to stakeholders",
+      "Focused on learning and improving performance continuously",
     ],
     generic: [
       "Delivered tasks with discipline, accuracy, and strong ownership mindset",
-      "Maintained professional communication and timely updates to stakeholders",
-      "Followed SOPs and ensured consistent quality in daily work",
+      "Maintained professional communication and timely updates",
+      "Worked collaboratively to meet targets and deadlines",
+      "Followed SOPs and ensured consistent quality output",
       "Improved efficiency by organizing priorities and workflow planning",
-      "Worked collaboratively with team members to meet targets and deadlines",
-      "Demonstrated punctuality, reliability, and continuous learning attitude",
+      "Demonstrated punctuality, reliability, and quick learning attitude",
     ],
   };
+
   return pools[roleKey] || pools.generic;
 }
 
 function getCompanyPointsPool(roleKey) {
   const pools = {
+    sales: [
+      "Managed daily calls/meetings and maintained consistent follow-up discipline",
+      "Generated and qualified leads to build a healthy sales pipeline",
+      "Converted prospects by explaining product benefits clearly",
+      "Maintained customer records and ensured timely documentation",
+      "Handled objections professionally to improve close rates",
+      "Supported relationship building to increase repeat/referral business",
+      "Ensured target tracking and daily planning to maintain performance",
+    ],
+    office: [
+      "Updated records and ensured accuracy in daily entries",
+      "Prepared basic reports and shared updates with stakeholders",
+      "Managed files and documentation for smooth operations",
+      "Coordinated with teams for timely task completion",
+      "Ensured billing/support tasks were completed without delays",
+      "Maintained process discipline and reduced manual errors",
+    ],
     security: [
-      "Managed entry/exit checks and ensured visitor verification as per policy",
-      "Maintained daily registers and supported smooth shift handovers",
-      "Performed patrolling rounds and reported suspicious activities promptly",
-      "Supported emergency readiness by following incident protocols",
-      "Coordinated with staff to resolve issues and maintain site discipline",
-      "Assisted in monitoring and escalation when required",
+      "Managed entry/exit checks and visitor verification as per policy",
+      "Performed patrol rounds and reported suspicious activities",
+      "Maintained registers and supported shift handover routines",
+      "Ensured discipline and compliance at site during duty hours",
+      "Supported emergency readiness and incident protocols",
+      "Coordinated with staff for smooth site operations",
     ],
     driver: [
-      "Maintained trip schedule with punctual start times and safe driving practices",
-      "Performed pre-trip checks to ensure vehicle readiness and compliance",
-      "Used navigation tools to choose efficient routes and avoid delays",
-      "Maintained basic trip records and provided timely status updates",
-      "Handled customer communication politely and ensured smooth service",
+      "Maintained trip schedule with punctual start times and safe driving",
+      "Performed pre-trip checks to ensure vehicle readiness",
+      "Used navigation tools to avoid delays and optimize routes",
+      "Maintained logs and provided status updates on time",
+      "Handled customer coordination politely and professionally",
       "Kept vehicle clean and supported basic upkeep routines",
     ],
     delivery: [
-      "Verified orders and ensured correct items before dispatch",
+      "Verified orders before dispatch to avoid wrong deliveries",
       "Delivered parcels within timeline and confirmed proof of delivery",
-      "Handled COD responsibly and followed company collection process",
-      "Communicated with customers to confirm address and delivery windows",
-      "Maintained daily delivery logs and supported route discipline",
-      "Followed safety and quality SOPs to avoid wrong deliveries",
+      "Handled COD responsibly and followed collection process",
+      "Communicated with customers for address confirmation",
+      "Maintained delivery logs and route discipline daily",
+      "Followed safety and quality SOPs consistently",
     ],
     mechanic: [
-      "Conducted systematic diagnostics and identified root causes accurately",
-      "Performed repair/servicing while following safety and quality standards",
-      "Maintained tool discipline and ensured proper storage after jobs",
-      "Completed final checks to ensure vehicle is ready for handover",
+      "Conducted diagnostics and identified root causes accurately",
+      "Performed repairs/servicing with safety and quality standards",
+      "Completed final checks to ensure readiness before handover",
+      "Maintained tool discipline and clean finishing",
       "Coordinated with team to reduce downtime and improve turnaround",
-      "Documented parts usage and ensured clean finishing of work",
+      "Documented parts usage and job updates properly",
     ],
     electrician: [
-      "Installed and maintained wiring/fittings ensuring insulation and safety",
-      "Used testing tools to identify faults and resolve efficiently",
-      "Performed preventive checks to reduce future breakdowns",
-      "Maintained job documentation and updated stakeholders",
-      "Ensured adherence to standards and minimized rework with inspection",
-      "Maintained tool discipline and safe worksite practices",
+      "Installed wiring/fittings ensuring insulation and safety",
+      "Used testing tools to identify faults and fix efficiently",
+      "Performed preventive checks to reduce breakdowns",
+      "Maintained documentation and shared work updates",
+      "Ensured standards compliance and minimized rework",
+      "Maintained safe worksite practices consistently",
     ],
     plumber: [
-      "Installed fittings/pipelines with clean finishing and leak prevention",
-      "Diagnosed blockages/leaks and resolved with proper testing",
-      "Maintained safety practices and cleaned worksite after completion",
-      "Ensured quality checks on water flow/pressure before handover",
-      "Communicated work progress clearly and delivered timely completion",
+      "Installed pipelines/fittings with clean finishing and leak prevention",
+      "Resolved blockages/leaks with proper testing and checks",
+      "Maintained safety practices and clean worksite after completion",
+      "Ensured flow/pressure testing before handover",
+      "Communicated timelines and progress clearly",
       "Used tools safely and minimized material wastage",
     ],
     housekeeping: [
-      "Executed daily cleaning checklist as per SOP and hygiene standards",
-      "Maintained high-touch areas carefully to ensure cleanliness and safety",
-      "Handled cleaning materials safely and ensured proper storage",
-      "Supported team coordination for deep cleaning and large areas",
-      "Reported maintenance issues and ensured hazard-free environment",
-      "Completed tasks on time with disciplined routine and quality",
+      "Executed daily checklist as per SOP and hygiene standards",
+      "Maintained high-touch areas carefully for sanitation",
+      "Handled materials safely and ensured proper storage",
+      "Supported deep cleaning and large-area tasks with team",
+      "Reported issues and maintained hazard-free environment",
+      "Completed tasks on time with consistent quality",
     ],
-    sales: [
-      "Managed leads and maintained follow-up discipline to improve conversions",
-      "Handled customer queries and communicated value confidently",
-      "Worked towards targets with structured daily planning",
-      "Maintained records and ensured transparency in pipeline status",
-      "Supported relationship building for repeat/referral business",
-      "Handled objections professionally and improved close rate",
+    tech: [
+      "Implemented features with clean components and stable state management",
+      "Handled API integration and error states gracefully",
+      "Improved UI performance using optimized rendering patterns",
+      "Fixed bugs with structured debugging and testing mindset",
+      "Worked with Git workflow and maintained code discipline",
+      "Ensured responsive design across devices",
     ],
-    office: [
-      "Maintained documentation and ensured data accuracy in daily work",
-      "Prepared reports and supported billing/back-office operations",
-      "Managed follow-ups and coordinated with teams for timely closures",
-      "Ensured file handling discipline and record completeness",
-      "Communicated updates professionally and supported smooth operations",
-      "Improved workflow by organizing tasks and priorities",
+    marketing: [
+      "Managed daily coordination and follow-ups for campaign tasks",
+      "Prepared updates and maintained tracking sheets accurately",
+      "Assisted in content planning and posting schedule execution",
+      "Supported lead handling and basic qualification steps",
+      "Maintained communication and timely reporting",
+      "Improved consistency with disciplined daily routines",
     ],
     generic: [
-      "Completed assigned tasks accurately while maintaining discipline and quality",
+      "Completed assigned tasks accurately while maintaining discipline",
       "Coordinated with team and provided timely updates",
       "Followed SOPs and ensured consistent output standards",
       "Maintained punctuality and reliability in daily responsibilities",
@@ -401,22 +529,16 @@ function getCompanyPointsPool(roleKey) {
       "Demonstrated positive attitude and quick learning mindset",
     ],
   };
+
   return pools[roleKey] || pools.generic;
 }
 
-/** =========================
- * Utils
- * ========================= */
-
-function clean(v) {
-  return String(v ?? "")
-    .replace(/\u00A0/g, " ")     // NBSP -> space
-    .replace(/\s+/g, " ")
-    .trim();
-}
+/* =========================
+   UTILS
+   ========================= */
 
 function unique(arr) {
-  return [...new Set((arr || []).map(clean).filter(Boolean))];
+  return [...new Set((arr || []).filter(Boolean))];
 }
 
 function seededShuffle(arr, seedStr) {
